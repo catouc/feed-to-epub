@@ -1,13 +1,12 @@
 use std::fs::File;
 use std::io::BufReader;
 use feed_rs::parser;
-use std::path::PathBuf;
 use anyhow::Result;
 
 pub mod transformer;
 
 fn main() -> Result<()> {
-    let feed_file = File::open("./test/atom.xml")?;
+    let feed_file = File::open("./test/danluu.xml")?;
     let feed_buf_reader = BufReader::new(feed_file);
     let feed = parser::parse(feed_buf_reader)?;
 
@@ -15,7 +14,7 @@ fn main() -> Result<()> {
 
     feed.entries.iter()
         .for_each(|entry| {
-            transformer::entry_to_epub(entry, &PathBuf::from("/tmp/1.epub")).expect("epub failed to create");
+            transformer::entry_to_epub(entry).expect("epub failed to create");
         });
     Ok(())
     // rss feed reader daemon

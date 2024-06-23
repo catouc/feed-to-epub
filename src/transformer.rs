@@ -14,10 +14,10 @@ pub enum Error {
     TitleExtractionError,
 }
 
-pub fn entry_to_epub(entry: &feed_rs::model::Entry, target_file: &PathBuf) -> Result<(), Error> {
+pub fn entry_to_epub(entry: &feed_rs::model::Entry) -> Result<(), Error> {
     let html = extract_html_string_from_entry(entry)?;
 
-    if let (Some(title), Some(updated)) = (&entry.title, &entry.updated) {
+    if let Some(title) = &entry.title {
         //let file_name = PathBuf::from(updated.checked_add_months()).join(".epub");
         let file_name = entry_title_to_file_name("./test", &title.content.replace("/", "_"));
         println!("{:?}", file_name);
@@ -27,7 +27,7 @@ pub fn entry_to_epub(entry: &feed_rs::model::Entry, target_file: &PathBuf) -> Re
             .generate(epub_file);
         Ok(())
     } else {
-        return Err(Error::BodyExtractionError) 
+        return Err(Error::TitleExtractionError) 
     }
 }
 
@@ -44,6 +44,10 @@ fn extract_html_string_from_entry(entry: &feed_rs::model::Entry) -> Result<Strin
             Err(Error::BodyExtractionError) 
         }
     } else {
+        if let Some(summary) = &entry.summary {
+            let body = summary.content.clone();
+            return Ok(body)
+        }
         Err(Error::BodyExtractionError)
     }
 }
