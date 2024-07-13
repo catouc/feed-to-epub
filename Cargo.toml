@@ -7,7 +7,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+clap = { version = "4.5.9", features = ["derive"] }
 epub-builder = "0.7.4"
+expanduser = "1.2.2"
 feed-rs = "2.0.0"
 rusqlite = "0.31.0"
 serde = { version = "1.0.204", features = ["derive"] }
