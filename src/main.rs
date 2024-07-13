@@ -1,32 +1,39 @@
-use std::fs::File;
-use std::io::BufReader;
-use feed_rs::parser;
+use crate::config::Config;
+use crate::feed_reader::{fetch_feed, FeedRequest};
 use anyhow::Result;
+use rusqlite::Connection;
+use std::path::PathBuf;
 
+pub mod config;
+pub mod feed_reader;
 pub mod transformer;
 
 fn main() -> Result<()> {
-    let feed_file = File::open("./test/danluu.xml")?;
-    let feed_buf_reader = BufReader::new(feed_file);
-    let feed = parser::parse(feed_buf_reader)?;
+    let config_path = PathBuf::from("./config.toml");
+    let config = Config::try_from(config_path)?;
 
-    println!("{}", feed.title.unwrap().content);
+    let conn = Connection::open("feed-to-rss.db")?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS feeds (
+            id INTEGER PRIMARY KEY,
+            feed_url TEXT NOT NULL,
+            last_modified TEXT NOT NULL
+        )",
+        (),
+    )?;
 
-    feed.entries.iter()
-        .for_each(|entry| {
-            transformer::entry_to_epub(entry).expect("epub failed to create");
-        });
+    config.feeds.iter().for_each(|feed| {
+        if let Ok(feed_url_parsed) = url::Url::parse(&feed.1.url) {
+            if let Ok(feed_request) = FeedRequest::from_conn_and_url(&conn, feed_url_parsed) {
+                if let Ok(feed) = fetch_feed(&conn, feed_request) {
+                    println!("{}", feed.title.unwrap().content);
+                    feed.entries.iter().for_each(|entry| {
+                        transformer::entry_to_epub(entry).expect("epub failed to create");
+                    });
+                }
+            }
+        }
+    });
+
     Ok(())
-    // rss feed reader daemon
-    // gets a config file per feed like:
-    // ~/.local/rss-to-epub/feeds.d/some-feed.conf
-    // Where we define the 
-    // url, destination path and other things to add into the resulting epub
-    // Then we read a feed like normal, and start a pipeline to transform the HTML of each post
-    // into epub putting it into the output
-    //
-    // Periodically we wake up and see if there's new stuff on the horizon (once a day seems to be
-    // enough)
-    // * Handle if-modified-since and/or etags, gotta have a re-read of some stuff for that.
 }
-

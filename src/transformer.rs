@@ -1,8 +1,7 @@
+use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 use std::fs::File;
 use std::path::PathBuf;
-use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 use thiserror::Error;
-
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -22,12 +21,14 @@ pub fn entry_to_epub(entry: &feed_rs::model::Entry) -> Result<(), Error> {
         let file_name = entry_title_to_file_name("./test", &title.content.replace('/', "_"));
         println!("{:?}", file_name);
         let epub_file = File::create(file_name)?;
-        let _ = EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap()
-            .add_content(EpubContent::new(&title.content, html.as_bytes())).unwrap()
+        let _ = EpubBuilder::new(ZipLibrary::new().unwrap())
+            .unwrap()
+            .add_content(EpubContent::new(&title.content, html.as_bytes()))
+            .unwrap()
             .generate(epub_file);
         Ok(())
     } else {
-        Err(Error::TitleExtractionError) 
+        Err(Error::TitleExtractionError)
     }
 }
 
@@ -40,12 +41,12 @@ fn extract_html_string_from_entry(entry: &feed_rs::model::Entry) -> Result<Strin
         if let Some(body) = &content.body {
             Ok(body.to_string())
         } else {
-            Err(Error::BodyExtractionError) 
+            Err(Error::BodyExtractionError)
         }
     } else {
         if let Some(summary) = &entry.summary {
             let body = summary.content.clone();
-            return Ok(body)
+            return Ok(body);
         }
         Err(Error::BodyExtractionError)
     }

@@ -22,6 +22,7 @@
         ];
 
         buildInputs = with pkgs; [
+	  sqlite
           openssl
         ];
 
@@ -33,9 +34,12 @@
         buildInputs = with pkgs; [
           cargo
 	  rustPackages.clippy
+	  rustPackages.rustfmt
           nixd
           openssl
           pkg-config
+	  sqlite
+	  litecli
           rust-analyzer
           rustc
         ];
