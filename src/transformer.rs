@@ -19,7 +19,7 @@ pub fn entry_to_epub(entry: &feed_rs::model::Entry) -> Result<(), Error> {
 
     if let Some(title) = &entry.title {
         //let file_name = PathBuf::from(updated.checked_add_months()).join(".epub");
-        let file_name = entry_title_to_file_name("./test", &title.content.replace("/", "_"));
+        let file_name = entry_title_to_file_name("./test", &title.content.replace('/', "_"));
         println!("{:?}", file_name);
         let epub_file = File::create(file_name)?;
         let _ = EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap()
@@ -27,13 +27,12 @@ pub fn entry_to_epub(entry: &feed_rs::model::Entry) -> Result<(), Error> {
             .generate(epub_file);
         Ok(())
     } else {
-        return Err(Error::TitleExtractionError) 
+        Err(Error::TitleExtractionError) 
     }
 }
 
 pub fn entry_title_to_file_name(destination_dir: &str, title: &str) -> PathBuf {
-    let path = PathBuf::from(format!("{}/{}.epub", destination_dir, title));
-    path
+    PathBuf::from(format!("{}/{}.epub", destination_dir, title))
 }
 
 fn extract_html_string_from_entry(entry: &feed_rs::model::Entry) -> Result<String, Error> {
