@@ -27,7 +27,7 @@
         ];
 
         src = ./.;
-        cargoSha256 = "sha256-OtSbmcxhfPavc8ea1WV6+deFiZi3FYTr9JTkNcxk9dw=";
+        cargoSha256 = "sha256-lEl2JuFHsYxLAoGMLZVzAESFrqJvVulk78URyMG37hE=";
       };
 
       devShells.x86_64-linux.default = pkgs.mkShell {
