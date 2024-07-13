@@ -22,18 +22,15 @@ fn main() -> Result<()> {
         (),
     )?;
 
-    config.feeds.iter().for_each(|feed| {
-        if let Ok(feed_url_parsed) = url::Url::parse(&feed.1.url) {
-            if let Ok(feed_request) = FeedRequest::from_conn_and_url(&conn, feed_url_parsed) {
-                if let Ok(feed) = fetch_feed(&conn, feed_request) {
-                    println!("{}", feed.title.unwrap().content);
-                    feed.entries.iter().for_each(|entry| {
-                        transformer::entry_to_epub(entry).expect("epub failed to create");
-                    });
-                }
-            }
-        }
-    });
-
+    config.feeds.iter()
+        .filter_map(|feed| url::Url::parse(&feed.1.url).ok())
+        .filter_map(|feed_url| FeedRequest::from_conn_and_url(&conn, feed_url).ok())
+        .filter_map(|feed_request| fetch_feed(&conn, feed_request).ok())
+        .for_each(|feed| {
+            println!("{}", feed.title.unwrap().content);
+            feed.entries.iter().for_each(|entry| {
+                transformer::entry_to_epub(entry).expect("epub failed to create")
+            });
+        });
     Ok(())
 }
