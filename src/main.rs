@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::feed_reader::{fetch_feed, FeedRequest};
+use crate::feed_reader::fetch_feed;
 use anyhow::Result;
 use clap::Parser;
 use expanduser::expanduser;
@@ -35,8 +35,7 @@ fn main() -> Result<()> {
     loop {
         config.feeds.iter()
             .filter_map(|feed| url::Url::parse(&feed.1.url).ok())
-            .filter_map(|feed_url| FeedRequest::from_conn_and_url(&conn, feed_url).ok())
-            .filter_map(|feed_request| fetch_feed(&conn, feed_request).ok())
+            .filter_map(|feed_request| fetch_feed(&conn, &feed_request).ok())
             .flat_map(|feed| feed.entries)
             .for_each(|entry| {
                 match transformer::entry_to_epub(&entry) {
