@@ -26,11 +26,9 @@ fn main() -> Result<()> {
         .filter_map(|feed| url::Url::parse(&feed.1.url).ok())
         .filter_map(|feed_url| FeedRequest::from_conn_and_url(&conn, feed_url).ok())
         .filter_map(|feed_request| fetch_feed(&conn, feed_request).ok())
-        .for_each(|feed| {
-            println!("{}", feed.title.unwrap().content);
-            feed.entries.iter().for_each(|entry| {
-                transformer::entry_to_epub(entry).expect("epub failed to create")
-            });
+        .flat_map(|feed| feed.entries)
+        .for_each(|entry| {
+            transformer::entry_to_epub(&entry).expect("epub failed to create")
         });
     Ok(())
 }
