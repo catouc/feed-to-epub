@@ -29,7 +29,10 @@ fn main() -> Result<()> {
             .filter_map(|feed_request| fetch_feed(&conn, feed_request).ok())
             .flat_map(|feed| feed.entries)
             .for_each(|entry| {
-                transformer::entry_to_epub(&entry).expect("epub failed to create")
+                match transformer::entry_to_epub(&entry) {
+                    Ok(..) => (),
+                    Err(err) => println!("failed to create epub: {}", err)
+                }
             });
         thread::sleep(Duration::from_secs(config.poll_interval_secs))
     }
