@@ -14,7 +14,7 @@
     in
     {
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
-        pname = "nyaa-bulk";
+        pname = "rss-to-epub";
         version = "0.2.0";
 
         nativeBuildInputs = with pkgs; [
@@ -32,6 +32,7 @@
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           cargo
+	  rustPackages.clippy
           nixd
           openssl
           pkg-config
