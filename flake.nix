@@ -14,7 +14,7 @@
     in
     {
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
-        pname = "rss-to-epub";
+        pname = "feed-to-epub";
         version = "0.2.0";
 
         nativeBuildInputs = with pkgs; [

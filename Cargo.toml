@@ -1,5 +1,5 @@
 [package]
-name = "rss-to-epub"
+name = "feed-to-epub"
 version = "0.1.0"
 edition = "2021"
 

@@ -376,6 +376,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "feed-to-epub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "epub-builder",
+ "expanduser",
+ "feed-rs",
+ "rusqlite",
+ "serde",
+ "thiserror",
+ "toml",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "flate2"
 version = "1.0.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -710,23 +727,6 @@ dependencies = [
  "spin",
  "untrusted",
  "windows-sys",
-]
-
-[[package]]
-name = "rss-to-epub"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "epub-builder",
- "expanduser",
- "feed-rs",
- "rusqlite",
- "serde",
- "thiserror",
- "toml",
- "ureq",
- "url",
 ]
 
 [[package]]
