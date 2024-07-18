@@ -36,11 +36,19 @@ pub fn fetch_feed(conn: &Connection, agent: &ureq::Agent, url: &Url) -> Result<F
     };
 
     if let Some(last_modified_since) = resp.header("Last-Modified") {
-        conn.execute(
-            "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified) VALUES
-            ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2)",
-            (feed_url, last_modified_since),
-        )?;
+        if let Some(etag) = resp.header("ETag") {
+            conn.execute(
+                "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, etag) VALUES
+                ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3)",
+                (feed_url, last_modified_since, etag),
+            )?;
+        } else {
+            conn.execute(
+                "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified) VALUES
+                ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3)",
+                (feed_url, last_modified_since),
+            )?;
+        }
     } else {
         conn.execute(
             "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified) VALUES

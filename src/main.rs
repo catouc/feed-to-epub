@@ -38,6 +38,11 @@ fn main() -> Result<()> {
         (),
     )?;
 
+    conn.execute(
+        "ALTER TABLE feeds ADD etag TEXT;",
+        (),
+    )?;
+
     loop {
         config.feeds.iter()
             .filter_map(|feed| url::Url::parse(&feed.1.url).ok())
