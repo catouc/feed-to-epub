@@ -25,14 +25,14 @@ fn get_feed_last_modified(conn: &Connection, feed_url: &Url) -> Result<String, E
     Ok(feed_request)
 }
 
-pub fn fetch_feed(conn: &Connection, url: &Url) -> Result<Feed, Error> {
+pub fn fetch_feed(conn: &Connection, agent: &ureq::Agent, url: &Url) -> Result<Feed, Error> {
     let feed_url = url.to_string();
 
     let resp = match get_feed_last_modified(conn, url) {
-        Ok(last_modified) => ureq::get(&feed_url).set("If-Modified-Since", &last_modified).call()?,
+        Ok(last_modified) => agent.get(&feed_url).set("If-Modified-Since", &last_modified).call()?,
         // yes this needs to be better, basically I need to, I think return a
         // Result<Option<String>, Err> from the get_feed_last_modified func
-        Err(..) => ureq::get(&feed_url).call()?,
+        Err(..) => agent.get(&feed_url).call()?,
     };
 
     if let Some(last_modified_since) = resp.header("Last-Modified") {

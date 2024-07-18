@@ -10,6 +10,8 @@ pub mod config;
 pub mod feed_reader;
 pub mod transformer;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
 struct Args {
@@ -21,6 +23,10 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let config_path = PathBuf::from(expanduser(&args.config)?);
     let config = Config::try_from(config_path).expect("failed to load configuration");
+
+    let agent = ureq::AgentBuilder::new()
+        .user_agent(&format!("feed-to-epub {}; +https:/github.com/catouc/feed-to-epub", VERSION))
+        .build();
 
     let conn = Connection::open("feed-to-rss.db")?;
     conn.execute(
@@ -35,7 +41,7 @@ fn main() -> Result<()> {
     loop {
         config.feeds.iter()
             .filter_map(|feed| url::Url::parse(&feed.1.url).ok())
-            .filter_map(|feed_request| fetch_feed(&conn, &feed_request).ok())
+            .filter_map(|feed_request| fetch_feed(&conn, &agent, &feed_request).ok())
             .flat_map(|feed| feed.entries)
             .for_each(|entry| {
                 match transformer::entry_to_epub(&entry) {
