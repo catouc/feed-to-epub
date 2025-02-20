@@ -30,6 +30,57 @@
         cargoSha256 = "sha256-lEl2JuFHsYxLAoGMLZVzAESFrqJvVulk78URyMG37hE=";
       };
 
+      overlay = final: prev: {
+        feed-to-epub = self.packages.x86_64-linux.default;
+      };
+
+      nixosModules.default = {config, lib, pkgs, ... }:
+      let
+        cfg = config.services.feed-to-epub;
+      in {
+        options = {
+          enable = lib.mkEnableOption "Enable the feed to epub service";
+          downloadDir = lib.mkOption {
+            type = lib.types.str;
+            default = "/var/feed-to-epub/";
+            description = "The location of the working directory, not created by the binary.";
+          };
+
+          user = lib.mkOption {
+            type = lib.types.str;
+            default = "feed-to-epub";
+            description = "Name of the user and group that are used for the service";
+          };
+
+          settings = lib.mkOption {
+            type = lib.types.attrs;
+            default = {};
+            description = "List of feeds we want to pull";
+          };
+        };
+
+        config = lib.mkIf cfg.enable {
+          users.groups."${cfg.user}" = {};
+          users.users."${cfg.user}" = {
+            isSystemUser = true;
+            group = cfg.user;
+          };
+
+          environment.etc."/feed-to-epub/config.toml" = {
+            source = pkgs.writers.writeTOML "config.toml" cfg.settings;
+          };
+
+          systemd.services.feed-to-epub = {
+            serviceConfig = {
+              Type = "simple";
+              ExecStart = "${pkgs.feed-to-epub}/bin/feed-to-epub --config /etc/feed-to-epub/config.toml";
+              User = cfg.user;
+              WorkingDirectory = cfg.downloadDir;
+            };
+          };
+        };
+      };
+
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           cargo
