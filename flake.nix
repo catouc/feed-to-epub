@@ -36,9 +36,9 @@
 
       nixosModules.default = {config, lib, pkgs, ... }:
       let
-        cfg = config.services.feed-to-epub;
+        cfg = config.feed-to-epub;
       in {
-        options = {
+        options.feed-to-epub = {
           enable = lib.mkEnableOption "Enable the feed to epub service";
           downloadDir = lib.mkOption {
             type = lib.types.str;
