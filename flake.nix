@@ -27,7 +27,7 @@
         ];
 
         src = ./.;
-        cargoSha256 = "sha256-lEl2JuFHsYxLAoGMLZVzAESFrqJvVulk78URyMG37hE=";
+        cargoSha256 = "sha256-igZhahS1/ueCwYwlKUl+WM4dqeiP4t3t3DoOwyPWVII=";
       };
 
       overlay = final: prev: {
