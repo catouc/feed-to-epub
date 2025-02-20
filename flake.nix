@@ -27,7 +27,7 @@
         ];
 
         src = ./.;
-        cargoSha256 = "sha256-xs8p59PP5nI8EHh0qfiugedO56wkEFAcbzPfgwy7EoQ=";
+        cargoHash = "sha256-xs8p59PP5nI8EHh0qfiugedO56wkEFAcbzPfgwy7EoQ=";
       };
 
       overlays.default = final: prev: {
