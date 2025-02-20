@@ -15,7 +15,7 @@
     {
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
         pname = "feed-to-epub";
-        version = "0.2.0";
+        version = "0.3.0";
 
         nativeBuildInputs = with pkgs; [
           pkg-config
@@ -27,10 +27,10 @@
         ];
 
         src = ./.;
-        cargoSha256 = "sha256-igZhahS1/ueCwYwlKUl+WM4dqeiP4t3t3DoOwyPWVII=";
+        cargoSha256 = "sha256-xs8p59PP5nI8EHh0qfiugedO56wkEFAcbzPfgwy7EoQ=";
       };
 
-      overlay = final: prev: {
+      overlays.default = final: prev: {
         feed-to-epub = self.packages.x86_64-linux.default;
       };
 
@@ -40,9 +40,16 @@
       in {
         options.feed-to-epub = {
           enable = lib.mkEnableOption "Enable the feed to epub service";
+
+          workingDir = lib.mkOption {
+            type = lib.types.path;
+            default = /var/feed-to-epub/db;
+            description = "The directory for the DB to run";
+          };
+
           downloadDir = lib.mkOption {
             type = lib.types.str;
-            default = "/var/feed-to-epub/";
+            default = "/var/feed-to-epub/downloads";
             description = "The location of the working directory, not created by the binary.";
           };
 
@@ -73,9 +80,9 @@
           systemd.services.feed-to-epub = {
             serviceConfig = {
               Type = "simple";
-              ExecStart = "${pkgs.feed-to-epub}/bin/feed-to-epub --config /etc/feed-to-epub/config.toml";
+              ExecStart = "${pkgs.feed-to-epub}/bin/feed-to-epub --config /etc/feed-to-epub/config.toml --download-dir ${cfg.downloadDir}";
               User = cfg.user;
-              WorkingDirectory = cfg.downloadDir;
+              WorkingDirectory = cfg.workingDir;
             };
           };
         };

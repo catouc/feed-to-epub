@@ -17,6 +17,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct Args {
     #[arg(short, long, default_value="~/.config/rss-to-epub/config.toml")]
     config: String,
+    #[arg(short, long, default_value="/var/feed-to-epub")]
+    download_dir: String,
 }
 
 fn main() -> Result<()> {
@@ -49,7 +51,7 @@ fn main() -> Result<()> {
             .filter_map(|feed_request| fetch_feed(&conn, &agent, &feed_request).ok())
             .flat_map(|feed| feed.entries)
             .for_each(|entry| {
-                match transformer::entry_to_epub(&entry) {
+                match transformer::entry_to_epub(&args.download_dir, &entry) {
                     Ok(..) => (),
                     Err(err) => println!("failed to create epub: {}", err)
                 }
