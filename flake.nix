@@ -22,7 +22,7 @@
         ];
 
         buildInputs = with pkgs; [
-	  sqlite
+          sqlite
           openssl
         ];
 
@@ -33,13 +33,13 @@
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           cargo
-	  rustPackages.clippy
-	  rustPackages.rustfmt
+          rustPackages.clippy
+          rustPackages.rustfmt
           nixd
           openssl
           pkg-config
-	  sqlite
-	  litecli
+          sqlite
+          litecli
           rust-analyzer
           rustc
         ];
