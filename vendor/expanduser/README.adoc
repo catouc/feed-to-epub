@@ -1,0 +1,31 @@
+= expanduser
+
+Similar to the python stdlib function os.path.expanduser, the function in this crate attempts to create a path while expanding `~` and `~user`.
+
+== Installation
+
+Add the following to your Cargo.toml:
+
+----
+expanduser = "1.2"
+----
+
+and add this to your crate root:
+
+----
+extern crate expanduser;
+----
+
+== Usage
+
+----
+extern crate expanduser;
+
+use std::io;
+use expanduser::expanduser;
+
+fn main() -> io::Result<()> {
+    let path = expanduser("~/path/to/directory")?;
+    assert_eq!(path.display().to_string(), "/home/foo/path/to/directory");
+}
+----

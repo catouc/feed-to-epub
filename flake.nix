@@ -17,6 +17,7 @@
         pname = "feed-to-epub";
         version = "0.3.0";
         useFetchCargoVendor = true;
+        cargoLock.lockFile = ./Cargo.lock;
 
         nativeBuildInputs = with pkgs; [
           pkg-config
