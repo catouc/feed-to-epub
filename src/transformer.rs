@@ -16,18 +16,41 @@ pub enum Error {
 pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
     let html = extract_html_string_from_entry(entry)?;
 
-    if let Some(title) = &entry.title {
-        //let file_name = PathBuf::from(updated.checked_add_months()).join(".epub");
-        let file_name = entry_title_to_file_name(download_dir, &title.content.replace('/', "_"));
-        let epub_file = File::create(file_name)?;
-        let _ = EpubBuilder::new(ZipLibrary::new().unwrap())
-            .unwrap()
-            .add_content(EpubContent::new(&title.content, html.as_bytes()))
-            .unwrap()
-            .generate(epub_file);
-        Ok(())
-    } else {
-        Err(Error::TitleExtractionError)
+    let mut epub_builder= EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
+    epub_builder
+        .metadata("generator", "feed-to-epub").unwrap();
+
+    if let Some(published_date) = &entry.published {
+        epub_builder.set_publication_date(*published_date);
+    }
+
+    if let Some(summary) = &entry.summary {
+        epub_builder
+            .metadata("description", &summary.content)
+            .unwrap();
+    }
+
+    let _ = &entry.authors.iter().map(|author| {
+        epub_builder.add_author(&author.name);
+    });
+
+    match &entry.title {
+        Some(title) => {
+            let file_name = entry_title_to_file_name(
+                download_dir,
+                &title.content.replace('/', "_"),
+            );
+            let epub_file = File::create(file_name)?;
+
+            epub_builder
+                .metadata("title", &title.content).unwrap()
+                .add_content(EpubContent::new(&title.content, html.as_bytes()))
+                .unwrap()
+                .generate(epub_file)
+                .unwrap();
+            Ok(())
+        }
+        None => Err(Error::TitleExtractionError)
     }
 }
 
