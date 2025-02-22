@@ -16,6 +16,7 @@
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
         pname = "feed-to-epub";
         version = "0.3.0";
+        useFetchCargoVendor = true;
 
         nativeBuildInputs = with pkgs; [
           pkg-config
