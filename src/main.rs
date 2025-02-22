@@ -35,13 +35,9 @@ fn main() -> Result<()> {
         "CREATE TABLE IF NOT EXISTS feeds (
             id INTEGER PRIMARY KEY,
             feed_url TEXT NOT NULL,
-            last_modified TEXT NOT NULL
+            last_modified TEXT,
+            etag TEXT
         )",
-        (),
-    )?;
-
-    conn.execute(
-        "ALTER TABLE feeds ADD etag TEXT;",
         (),
     )?;
 
