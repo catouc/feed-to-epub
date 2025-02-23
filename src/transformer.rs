@@ -9,12 +9,15 @@ pub enum Error {
     FileCreationError(#[from] std::io::Error),
     #[error("could not get bytes from HTML content")]
     BodyExtractionError,
+    #[error("could not get bytes from HTML summary")]
+    SummaryExtractionError,
     #[error("could not get title from entry")]
     TitleExtractionError,
 }
 
 pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
     let html = extract_html_string_from_entry(entry)?;
+    let xhtml = html_string_to_xhtml_epub_string(&html);
 
     let mut epub_builder= EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
     epub_builder
@@ -44,7 +47,7 @@ pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Resul
 
             epub_builder
                 .metadata("title", &title.content).unwrap()
-                .add_content(EpubContent::new(&title.content, html.as_bytes()))
+                .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))
                 .unwrap()
                 .generate(epub_file)
                 .unwrap();
@@ -70,6 +73,24 @@ fn extract_html_string_from_entry(entry: &feed_rs::model::Entry) -> Result<Strin
             let body = summary.content.clone();
             return Ok(body);
         }
-        Err(Error::BodyExtractionError)
+        Err(Error::SummaryExtractionError)
     }
+}
+
+fn html_string_to_xhtml_epub_string(html: &str) -> String {
+    let mut xhtml: String = "".into();
+    xhtml.push_str(r#"<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="application/xhtml+xml; charset=utf-8" />
+    <title>Pride and Prejudice</title>
+    <link rel="stylesheet" href="css/main.css" type="text/css" />
+  </head>
+  <body>
+"#);
+    xhtml.push_str(html);
+    xhtml.push_str(r#"  </body>
+</html>"#);
+    xhtml
 }
