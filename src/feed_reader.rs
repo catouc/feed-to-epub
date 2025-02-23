@@ -10,8 +10,6 @@ pub enum Error {
     DBError(#[from] rusqlite::Error),
     #[error("failed HTTP call")]
     HTTPError(#[from] ureq::Error),
-    #[error("no new data on feed")]
-    NoNewFeedDataError,
     #[error("invalid feed data")]
     InvalidFeedDataError(#[from] feed_rs::parser::ParseFeedError),
 }
@@ -25,7 +23,7 @@ fn get_feed_last_modified(conn: &Connection, feed_url: &Url) -> Result<String, E
     Ok(feed_request)
 }
 
-pub fn fetch_feed(conn: &Connection, agent: &ureq::Agent, url: &Url) -> Result<Feed, Error> {
+pub fn fetch_feed(conn: &Connection, agent: &ureq::Agent, url: &Url) -> Result<Option<Feed>, Error> {
     let feed_url = url.to_string();
 
     let resp = match get_feed_last_modified(conn, url) {
@@ -58,11 +56,11 @@ pub fn fetch_feed(conn: &Connection, agent: &ureq::Agent, url: &Url) -> Result<F
     }
 
     if resp.status() == 304 {
-        Err(Error::NoNewFeedDataError)
+        Ok(None)
     } else {
         let feed_response_reader = resp.into_reader();
         let feed = parser::parse(feed_response_reader)?;
-        Ok(feed)
+        Ok(Some(feed))
     }
 }
 

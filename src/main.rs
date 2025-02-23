@@ -46,12 +46,14 @@ fn main() -> Result<()> {
             let url = url::Url::parse(&feed.1.url).expect("found invalid URL in configuration");
             let feed_data = fetch_feed(&conn, &agent, &url).unwrap();
 
-            feed_data.entries.iter().for_each(|entry| {
-                 match transformer::entry_to_epub(&args.download_dir, feed.0, &entry) {
-                    Ok(..) => (),
-                    Err(err) => println!("failed to create epub: {}", err)
-                }
-            });
+            if let Some(feed_data) = feed_data {
+                feed_data.entries.iter().for_each(|entry| {
+                     match transformer::entry_to_epub(&args.download_dir, feed.0, &entry) {
+                        Ok(..) => (),
+                        Err(err) => println!("failed to create epub: {}", err)
+                    }
+                });
+            }
         }
 
         thread::sleep(Duration::from_secs(config.poll_interval_secs))
