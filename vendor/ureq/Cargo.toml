@@ -11,18 +11,23 @@
 
 [package]
 edition = "2018"
-rust-version = "1.63"
+rust-version = "1.71"
 name = "ureq"
-version = "2.10.0"
+version = "2.12.1"
 authors = [
     "Martin Algesten <martin@algesten.se>",
     "Jacob Hoffman-Andrews <ureq@hoffman-andrews.com>",
 ]
+build = false
 exclude = [
     "/cargo_deny.sh",
     "/deny.toml",
     "/test.sh",
 ]
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Simple, safe HTTP client"
 readme = "README.md"
 keywords = [
@@ -54,8 +59,17 @@ rustdoc-args = [
     "docsrs",
 ]
 
+[lib]
+name = "ureq"
+path = "src/lib.rs"
+
+[[example]]
+name = "count-bytes"
+path = "examples/count-bytes.rs"
+
 [[example]]
 name = "cureq"
+path = "examples/cureq/main.rs"
 required-features = [
     "charset",
     "cookies",
@@ -64,11 +78,28 @@ required-features = [
 ]
 
 [[example]]
+name = "custom-tls"
+path = "examples/custom-tls.rs"
+
+[[example]]
+name = "ipv6"
+path = "examples/ipv6.rs"
+
+[[example]]
+name = "smoke-test"
+path = "examples/smoke-test/main.rs"
+
+[[example]]
 name = "tls_config"
+path = "examples/tls_config.rs"
 required-features = [
     "tls",
     "native-tls",
 ]
+
+[[test]]
+name = "https-agent"
+path = "tests/https-agent.rs"
 
 [dependencies.base64]
 version = "0.22"
@@ -83,8 +114,11 @@ optional = true
 default-features = false
 
 [dependencies.cookie_store]
-version = "0.21"
-features = ["preserve_order"]
+version = "0.21.1"
+features = [
+    "preserve_order",
+    "serde_json",
+]
 optional = true
 default-features = false
 
@@ -120,7 +154,7 @@ optional = true
 version = "1"
 
 [dependencies.rustls]
-version = "0.23.5"
+version = "0.23.19"
 features = [
     "ring",
     "logging",
@@ -143,7 +177,7 @@ version = "1"
 optional = true
 
 [dependencies.serde_json]
-version = ">=1.0.97"
+version = "1.0.97"
 optional = true
 
 [dependencies.socks]
@@ -151,7 +185,7 @@ version = "0.3"
 optional = true
 
 [dependencies.url]
-version = "2"
+version = "2.5.0"
 
 [dependencies.webpki-roots]
 version = "0.26"
@@ -159,6 +193,8 @@ optional = true
 
 [dev-dependencies.env_logger]
 version = "<=0.9"
+features = ["humantime"]
+default-features = false
 
 [dev-dependencies.rustls]
 version = "0.23.5"

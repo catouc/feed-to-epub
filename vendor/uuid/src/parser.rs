@@ -151,6 +151,7 @@ const fn try_parse(input: &[u8]) -> Result<[u8; 16], InvalidUuid> {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) const fn parse_braced(input: &[u8]) -> Result<[u8; 16], InvalidUuid> {
     if let (38, [b'{', s @ .., b'}']) = (input.len(), input) {
         parse_hyphenated(s)
@@ -160,6 +161,7 @@ pub(crate) const fn parse_braced(input: &[u8]) -> Result<[u8; 16], InvalidUuid> 
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) const fn parse_urn(input: &[u8]) -> Result<[u8; 16], InvalidUuid> {
     if let (45, [b'u', b'r', b'n', b':', b'u', b'u', b'i', b'd', b':', s @ ..]) =
         (input.len(), input)
@@ -203,7 +205,7 @@ pub(crate) const fn parse_simple(s: &[u8]) -> Result<[u8; 16], InvalidUuid> {
 }
 
 #[inline]
-const fn parse_hyphenated(s: &[u8]) -> Result<[u8; 16], InvalidUuid> {
+pub(crate) const fn parse_hyphenated(s: &[u8]) -> Result<[u8; 16], InvalidUuid> {
     // This length check here removes all other bounds
     // checks in this function
     if s.len() != 36 {

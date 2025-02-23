@@ -1,6 +1,5 @@
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use pki_types::DnsName;
@@ -17,9 +16,8 @@ use crate::enums::{
 };
 use crate::error::{Error, PeerIncompatible, PeerMisbehaved};
 use crate::hash_hs::{HandshakeHash, HandshakeHashBuffer};
-#[cfg(feature = "logging")]
 use crate::log::{debug, trace};
-use crate::msgs::enums::{Compression, ExtensionType, NamedGroup};
+use crate::msgs::enums::{CertificateType, Compression, ExtensionType, NamedGroup};
 #[cfg(feature = "tls12")]
 use crate::msgs::handshake::SessionId;
 use crate::msgs::handshake::{
@@ -30,6 +28,7 @@ use crate::msgs::message::{Message, MessagePayload};
 use crate::msgs::persist;
 use crate::server::common::ActiveCertifiedKey;
 use crate::server::{tls13, ClientHello, ServerConfig};
+use crate::sync::Arc;
 use crate::{suites, SupportedCipherSuite};
 
 pub(super) type NextState<'a> = Box<dyn State<ServerConnectionData> + 'a>;
@@ -157,6 +156,9 @@ impl ExtensionProcessing {
             ocsp_response.take();
         }
 
+        self.validate_server_cert_type_extension(hello, config, cx)?;
+        self.validate_client_cert_type_extension(hello, config, cx)?;
+
         self.exts.extend(extra_exts);
 
         Ok(())
@@ -201,6 +203,94 @@ impl ExtensionProcessing {
             self.exts
                 .push(ServerExtension::ExtendedMasterSecretAck);
         }
+    }
+
+    fn validate_server_cert_type_extension(
+        &mut self,
+        hello: &ClientHelloPayload,
+        config: &ServerConfig,
+        cx: &mut ServerContext<'_>,
+    ) -> Result<(), Error> {
+        let client_supports = hello
+            .server_certificate_extension()
+            .map(|certificate_types| certificate_types.to_vec())
+            .unwrap_or_default();
+
+        self.process_cert_type_extension(
+            client_supports,
+            config
+                .cert_resolver
+                .only_raw_public_keys(),
+            ExtensionType::ServerCertificateType,
+            cx,
+        )
+    }
+
+    fn validate_client_cert_type_extension(
+        &mut self,
+        hello: &ClientHelloPayload,
+        config: &ServerConfig,
+        cx: &mut ServerContext<'_>,
+    ) -> Result<(), Error> {
+        let client_supports = hello
+            .client_certificate_extension()
+            .map(|certificate_types| certificate_types.to_vec())
+            .unwrap_or_default();
+
+        self.process_cert_type_extension(
+            client_supports,
+            config
+                .verifier
+                .requires_raw_public_keys(),
+            ExtensionType::ClientCertificateType,
+            cx,
+        )
+    }
+
+    fn process_cert_type_extension(
+        &mut self,
+        client_supports: Vec<CertificateType>,
+        requires_raw_keys: bool,
+        extension_type: ExtensionType,
+        cx: &mut ServerContext<'_>,
+    ) -> Result<(), Error> {
+        debug_assert!(
+            extension_type == ExtensionType::ClientCertificateType
+                || extension_type == ExtensionType::ServerCertificateType
+        );
+        let raw_key_negotation_result = match (
+            requires_raw_keys,
+            client_supports.contains(&CertificateType::RawPublicKey),
+            client_supports.contains(&CertificateType::X509),
+        ) {
+            (true, true, _) => Ok((extension_type, CertificateType::RawPublicKey)),
+            (false, _, true) => Ok((extension_type, CertificateType::X509)),
+            (false, true, false) => Err(Error::PeerIncompatible(
+                PeerIncompatible::IncorrectCertificateTypeExtension,
+            )),
+            (true, false, _) => Err(Error::PeerIncompatible(
+                PeerIncompatible::IncorrectCertificateTypeExtension,
+            )),
+            (false, false, false) => return Ok(()),
+        };
+
+        match raw_key_negotation_result {
+            Ok((ExtensionType::ClientCertificateType, cert_type)) => {
+                self.exts
+                    .push(ServerExtension::ClientCertType(cert_type));
+            }
+            Ok((ExtensionType::ServerCertificateType, cert_type)) => {
+                self.exts
+                    .push(ServerExtension::ServerCertType(cert_type));
+            }
+            Err(err) => {
+                return Err(cx
+                    .common
+                    .send_fatal_alert(AlertDescription::HandshakeFailure, err));
+            }
+            Ok((_, _)) => unreachable!(),
+        }
+        Ok(())
     }
 }
 
@@ -312,14 +402,23 @@ impl ExpectClientHello {
         sig_schemes
             .retain(|scheme| suites::compatible_sigscheme_for_suites(*scheme, &client_suites));
 
+        // We adhere to the TLS 1.2 RFC by not exposing this to the cert resolver if TLS version is 1.2
+        let certificate_authorities = match version {
+            ProtocolVersion::TLSv1_2 => None,
+            _ => client_hello.certificate_authorities_extension(),
+        };
         // Choose a certificate.
         let certkey = {
-            let client_hello = ClientHello::new(
-                &cx.data.sni,
-                &sig_schemes,
-                client_hello.alpn_extension(),
-                &client_hello.cipher_suites,
-            );
+            let client_hello = ClientHello {
+                server_name: &cx.data.sni,
+                signature_schemes: &sig_schemes,
+                alpn: client_hello.alpn_extension(),
+                client_cert_types: client_hello.server_certificate_extension(),
+                server_cert_types: client_hello.client_certificate_extension(),
+                cipher_suites: &client_hello.cipher_suites,
+                certificate_authorities,
+            };
+            trace!("Resolving server certificate: {client_hello:#?}");
 
             let certkey = self
                 .config
@@ -431,7 +530,9 @@ impl ExpectClientHello {
                 .provider
                 .kx_groups
                 .iter()
-                .find(|skxg| skxg.name() == *offered_group);
+                .find(|skxg| {
+                    skxg.usable_for_version(selected_version) && skxg.name() == *offered_group
+                });
 
             match offered_group.key_exchange_algorithm() {
                 KeyExchangeAlgorithm::DHE => {

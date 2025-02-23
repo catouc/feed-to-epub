@@ -1,13 +1,12 @@
 use std::fs;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{
-    central_header_to_zip_file_inner, read_zipfile_from_stream, spec, ZipError, ZipFile,
-    ZipFileData, ZipResult,
+    central_header_to_zip_file_inner, read_zipfile_from_stream, ZipCentralEntryBlock, ZipError,
+    ZipFile, ZipFileData, ZipResult,
 };
-
-use byteorder::{LittleEndian, ReadBytesExt};
+use crate::spec::FixedSizeBlock;
 
 /// Stream decoder for zip.
 #[derive(Debug)]
@@ -15,37 +14,37 @@ pub struct ZipStreamReader<R>(R);
 
 impl<R> ZipStreamReader<R> {
     /// Create a new ZipStreamReader
-    pub fn new(reader: R) -> Self {
+    pub const fn new(reader: R) -> Self {
         Self(reader)
     }
 }
 
 impl<R: Read> ZipStreamReader<R> {
-    fn parse_central_directory(&mut self) -> ZipResult<Option<ZipStreamFileMetadata>> {
+    fn parse_central_directory(&mut self) -> ZipResult<ZipStreamFileMetadata> {
         // Give archive_offset and central_header_start dummy value 0, since
         // they are not used in the output.
         let archive_offset = 0;
         let central_header_start = 0;
 
         // Parse central header
-        let signature = self.0.read_u32::<LittleEndian>()?;
-        if signature != spec::CENTRAL_DIRECTORY_HEADER_SIGNATURE {
-            Ok(None)
-        } else {
-            central_header_to_zip_file_inner(&mut self.0, archive_offset, central_header_start)
-                .map(ZipStreamFileMetadata)
-                .map(Some)
-        }
+        let block = ZipCentralEntryBlock::parse(&mut self.0)?;
+        let file = central_header_to_zip_file_inner(
+            &mut self.0,
+            archive_offset,
+            central_header_start,
+            block,
+        )?;
+        Ok(ZipStreamFileMetadata(file))
     }
 
-    /// Iteraate over the stream and extract all file and their
+    /// Iterate over the stream and extract all file and their
     /// metadata.
     pub fn visit<V: ZipStreamVisitor>(mut self, visitor: &mut V) -> ZipResult<()> {
         while let Some(mut file) = read_zipfile_from_stream(&mut self.0)? {
             visitor.visit_file(&mut file)?;
         }
 
-        while let Some(metadata) = self.parse_central_directory()? {
+        while let Ok(metadata) = self.parse_central_directory() {
             visitor.visit_additional_metadata(&metadata)?;
         }
 
@@ -67,7 +66,7 @@ impl<R: Read> ZipStreamReader<R> {
 
                 let outpath = self.0.join(filepath);
 
-                if file.name().ends_with('/') {
+                if file.is_dir() {
                     fs::create_dir_all(&outpath)?;
                 } else {
                     if let Some(p) = outpath.parent() {
@@ -153,16 +152,14 @@ impl ZipStreamFileMetadata {
     /// Rewrite the path, ignoring any path components with special meaning.
     ///
     /// - Absolute paths are made relative
-    /// - [`ParentDir`]s are ignored
+    /// - [std::path::Component::ParentDir]s are ignored
     /// - Truncates the filename at a NULL byte
     ///
     /// This is appropriate if you need to be able to extract *something* from
     /// any archive, but will easily misrepresent trivial paths like
     /// `foo/../bar` as `foo/bar` (instead of `bar`). Because of this,
     /// [`ZipFile::enclosed_name`] is the better option in most scenarios.
-    ///
-    /// [`ParentDir`]: `Component::ParentDir`
-    pub fn mangled_name(&self) -> ::std::path::PathBuf {
+    pub fn mangled_name(&self) -> PathBuf {
         self.0.file_name_sanitized()
     }
 
@@ -176,7 +173,7 @@ impl ZipStreamFileMetadata {
     /// This will read well-formed ZIP files correctly, and is resistant
     /// to path-based exploits. It is recommended over
     /// [`ZipFile::mangled_name`].
-    pub fn enclosed_name(&self) -> Option<&Path> {
+    pub fn enclosed_name(&self) -> Option<PathBuf> {
         self.0.enclosed_name()
     }
 
@@ -184,9 +181,8 @@ impl ZipStreamFileMetadata {
     pub fn is_dir(&self) -> bool {
         self.name()
             .chars()
-            .rev()
-            .next()
-            .map_or(false, |c| c == '/' || c == '\\')
+            .next_back()
+            .is_some_and(|c| c == '/' || c == '\\')
     }
 
     /// Returns whether the file is a regular file
@@ -199,13 +195,8 @@ impl ZipStreamFileMetadata {
         &self.0.file_comment
     }
 
-    /// Get the starting offset of the data of the compressed file
-    pub fn data_start(&self) -> u64 {
-        self.0.data_start.load()
-    }
-
     /// Get unix mode for the file
-    pub fn unix_mode(&self) -> Option<u32> {
+    pub const fn unix_mode(&self) -> Option<u32> {
         self.0.unix_mode()
     }
 }
@@ -214,7 +205,6 @@ impl ZipStreamFileMetadata {
 mod test {
     use super::*;
     use std::collections::BTreeSet;
-    use std::io;
 
     struct DummyVisitor;
     impl ZipStreamVisitor for DummyVisitor {
@@ -230,6 +220,7 @@ mod test {
         }
     }
 
+    #[allow(dead_code)]
     #[derive(Default, Debug, Eq, PartialEq)]
     struct CounterVisitor(u64, u64);
     impl ZipStreamVisitor for CounterVisitor {

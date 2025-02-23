@@ -1,9 +1,14 @@
 ChangeLog
 ==========
 
-0.7.4 (2023-08-11)
+0.8.0 (2025-02-03)
 ==================
-* Use tempile instead of tempdir
+* Use `upon` instead of `eyre`
+* Add a way to change epub direction
+
+0.7.4 (2023-10-05)
+======================
+* Make sure XML names don't start with invalid characters (dluschan)
 
 0.7.3 (2023-08-11)
 ==================

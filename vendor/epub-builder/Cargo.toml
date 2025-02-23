@@ -12,8 +12,13 @@
 [package]
 edition = "2021"
 name = "epub-builder"
-version = "0.7.4"
-authors = ["Elisabeth Henry <liz.henry@ouvaton.org>"]
+version = "0.8.0"
+authors = ["Lizzie Crowdagger <lizzie@crowdagger.fr>"]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A Rust library for generating EPUB files"
 documentation = "https://docs.rs/epub-builder"
 readme = "README.md"
@@ -26,10 +31,16 @@ name = "epub_builder"
 path = "src/lib.rs"
 
 [[example]]
+name = "book"
+path = "examples/book.rs"
+
+[[example]]
 name = "builder"
+path = "examples/builder.rs"
 
 [[example]]
 name = "procedural"
+path = "examples/procedural.rs"
 
 [dependencies.chrono]
 version = "0.4"
@@ -40,14 +51,11 @@ features = [
 ]
 default-features = false
 
-[dependencies.eyre]
-version = "0.6"
-
 [dependencies.html-escape]
 version = "0.2"
 
 [dependencies.libzip]
-version = "0.6"
+version = "2.1"
 features = ["deflate"]
 optional = true
 default-features = false
@@ -63,15 +71,18 @@ version = "1"
 version = "3"
 optional = true
 
+[dependencies.thiserror]
+version = "2.0"
+
 [dependencies.upon]
-version = "0.7"
+version = "0.8"
 
 [dependencies.uuid]
 version = "1"
 features = ["v4"]
 
 [dev-dependencies.env_logger]
-version = "0.10"
+version = "0.11"
 
 [dev-dependencies.pretty_assertions]
 version = "1"

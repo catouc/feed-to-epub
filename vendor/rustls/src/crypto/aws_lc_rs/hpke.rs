@@ -1,6 +1,4 @@
 use alloc::boxed::Box;
-#[cfg(feature = "std")]
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 
@@ -14,12 +12,15 @@ use aws_lc_rs::encoding::{AsBigEndian, Curve25519SeedBin, EcPrivateKeyBin};
 use zeroize::Zeroize;
 
 use crate::crypto::aws_lc_rs::hmac::{HMAC_SHA256, HMAC_SHA384, HMAC_SHA512};
+use crate::crypto::aws_lc_rs::unspecified_err;
 use crate::crypto::hpke::{
     EncapsulatedSecret, Hpke, HpkeOpener, HpkePrivateKey, HpkePublicKey, HpkeSealer, HpkeSuite,
 };
 use crate::crypto::tls13::{expand, HkdfExpander, HkdfPrkExtract, HkdfUsingHmac};
 use crate::msgs::enums::{HpkeAead, HpkeKdf, HpkeKem};
 use crate::msgs::handshake::HpkeSymmetricCipherSuite;
+#[cfg(feature = "std")]
+use crate::sync::Arc;
 use crate::{Error, OtherError};
 
 /// Default [RFC 9180] Hybrid Public Key Encryption (HPKE) suites supported by aws-lc-rs cryptography.
@@ -921,17 +922,6 @@ struct KemSharedSecret<const KDF_LEN: usize>([u8; KDF_LEN]);
 impl<const KDF_LEN: usize> Drop for KemSharedSecret<KDF_LEN> {
     fn drop(&mut self) {
         self.0.zeroize();
-    }
-}
-
-fn unspecified_err(_e: aws_lc_rs::error::Unspecified) -> Error {
-    #[cfg(feature = "std")]
-    {
-        Error::Other(OtherError(Arc::new(_e)))
-    }
-    #[cfg(not(feature = "std"))]
-    {
-        Error::Other(OtherError())
     }
 }
 

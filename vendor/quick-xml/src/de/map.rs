@@ -5,12 +5,14 @@ use crate::{
     de::resolver::EntityResolver,
     de::simple_type::SimpleTypeDeserializer,
     de::text::TextDeserializer,
-    de::{str2bool, DeEvent, Deserializer, XmlRead, TEXT_KEY, VALUE_KEY},
+    de::{DeEvent, Deserializer, XmlRead, TEXT_KEY, VALUE_KEY},
     encoding::Decoder,
     errors::serialize::DeError,
+    errors::Error,
     events::attributes::IterState,
     events::BytesStart,
     name::QName,
+    utils::CowRef,
 };
 use serde::de::value::BorrowedStrDeserializer;
 use serde::de::{self, DeserializeSeed, Deserializer as _, MapAccess, SeqAccess, Visitor};
@@ -237,7 +239,8 @@ where
             let (key, value) = a.into();
             self.source = ValueSource::Attribute(value.unwrap_or_default());
 
-            let de = QNameDeserializer::from_attr(QName(&slice[key]), decoder)?;
+            let de =
+                QNameDeserializer::from_attr(QName(&slice[key]), decoder, &mut self.de.key_buf)?;
             seed.deserialize(de).map(Some)
         } else {
             // try getting from events (<key>value</key>)
@@ -300,7 +303,7 @@ where
                 }
                 // We cannot get `Eof` legally, because we always inside of the
                 // opened tag `self.start`
-                DeEvent::Eof => Err(DeError::UnexpectedEof),
+                DeEvent::Eof => Err(Error::missed_end(self.start.name(), decoder).into()),
             }
         }
     }
@@ -616,9 +619,9 @@ where
         if self.fixed_name {
             match self.map.de.next()? {
                 // Handles <field>UnitEnumVariant</field>
-                DeEvent::Start(_) => {
+                DeEvent::Start(e) => {
                     // skip <field>, read text after it and ensure that it is ended by </field>
-                    let text = self.map.de.read_text()?;
+                    let text = self.map.de.read_text(e.name())?;
                     if text.is_empty() {
                         // Map empty text (<field/>) to a special `$text` variant
                         visitor.visit_enum(SimpleTypeDeserializer::from_text(TEXT_KEY.into()))
@@ -669,8 +672,8 @@ where
                 seed.deserialize(BorrowedStrDeserializer::<DeError>::new(TEXT_KEY))?,
                 true,
             ),
-            DeEvent::End(e) => return Err(DeError::UnexpectedEnd(e.name().into_inner().to_vec())),
-            DeEvent::Eof => return Err(DeError::UnexpectedEof),
+            // SAFETY: we use that deserializer only when we peeked `Start` or `Text` event
+            _ => unreachable!(),
         };
         Ok((
             name,
@@ -787,7 +790,7 @@ fn not_in(
     start: &BytesStart,
     decoder: Decoder,
 ) -> Result<bool, DeError> {
-    let tag = decoder.decode(start.name().into_inner())?;
+    let tag = decoder.decode(start.local_name().into_inner())?;
 
     Ok(fields.iter().all(|&field| field != tag.as_ref()))
 }
@@ -927,12 +930,14 @@ where
                 DeEvent::Start(e) if !self.filter.is_suitable(e, decoder)? => Ok(None),
 
                 // Stop iteration after reaching a closing tag
-                DeEvent::End(e) if e.name() == self.map.start.name() => Ok(None),
-                // This is a unmatched closing tag, so the XML is invalid
-                DeEvent::End(e) => Err(DeError::UnexpectedEnd(e.name().as_ref().to_owned())),
+                // The matching tag name is guaranteed by the reader
+                DeEvent::End(e) => {
+                    debug_assert_eq!(self.map.start.name(), e.name());
+                    Ok(None)
+                }
                 // We cannot get `Eof` legally, because we always inside of the
                 // opened tag `self.map.start`
-                DeEvent::Eof => Err(DeError::UnexpectedEof),
+                DeEvent::Eof => Err(Error::missed_end(self.map.start.name(), decoder).into()),
 
                 DeEvent::Text(_) => match self.map.de.next()? {
                     DeEvent::Text(e) => seed.deserialize(TextDeserializer(e)).map(Some),
@@ -1018,7 +1023,7 @@ where
     /// [`CData`]: crate::events::Event::CData
     #[inline]
     fn read_string(&mut self) -> Result<Cow<'de, str>, DeError> {
-        self.de.read_text()
+        self.de.read_text(self.start.name())
     }
 }
 
@@ -1177,6 +1182,8 @@ where
 
 #[test]
 fn test_not_in() {
+    use pretty_assertions::assert_eq;
+
     let tag = BytesStart::new("tag");
 
     assert_eq!(not_in(&[], &tag, Decoder::utf8()).unwrap(), true);
@@ -1187,5 +1194,19 @@ fn test_not_in() {
     assert_eq!(
         not_in(&["some", "tag", "included"], &tag, Decoder::utf8()).unwrap(),
         false
+    );
+
+    let tag_ns = BytesStart::new("ns1:tag");
+    assert_eq!(
+        not_in(&["no", "such", "tags"], &tag_ns, Decoder::utf8()).unwrap(),
+        true
+    );
+    assert_eq!(
+        not_in(&["some", "tag", "included"], &tag_ns, Decoder::utf8()).unwrap(),
+        false
+    );
+    assert_eq!(
+        not_in(&["some", "namespace", "ns1:tag"], &tag_ns, Decoder::utf8()).unwrap(),
+        true
     );
 }

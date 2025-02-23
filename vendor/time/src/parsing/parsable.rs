@@ -15,7 +15,7 @@ use crate::parsing::{Parsed, ParsedItem};
 use crate::{error, Date, Month, OffsetDateTime, Time, UtcOffset, Weekday};
 
 /// A type that can be parsed.
-#[cfg_attr(__time_03_docs, doc(notable_trait))]
+#[cfg_attr(docsrs, doc(notable_trait))]
 #[doc(alias = "Parseable")]
 pub trait Parsable: sealed::Sealed {}
 impl Parsable for BorrowedFormatItem<'_> {}
@@ -274,10 +274,9 @@ impl sealed::Sealed for Rfc2822 {
             false,
         )(input)
         .or_else(|| match input {
-            [
-                b'a'..=b'i' | b'k'..=b'z' | b'A'..=b'I' | b'K'..=b'Z',
-                rest @ ..,
-            ] => Some(ParsedItem(rest, 0)),
+            [b'a'..=b'i' | b'k'..=b'z' | b'A'..=b'I' | b'K'..=b'Z', rest @ ..] => {
+                Some(ParsedItem(rest, 0))
+            }
             _ => None,
         });
         if let Some(zone_literal) = zone_literal {
@@ -424,10 +423,9 @@ impl sealed::Sealed for Rfc2822 {
             false,
         )(input)
         .or_else(|| match input {
-            [
-                b'a'..=b'i' | b'k'..=b'z' | b'A'..=b'I' | b'K'..=b'Z',
-                rest @ ..,
-            ] => Some(ParsedItem(rest, 0)),
+            [b'a'..=b'i' | b'k'..=b'z' | b'A'..=b'I' | b'K'..=b'Z', rest @ ..] => {
+                Some(ParsedItem(rest, 0))
+            }
             _ => None,
         });
 
@@ -520,9 +518,16 @@ impl sealed::Sealed for Rfc3339 {
         let input = exactly_n_digits::<2, _>(input)
             .and_then(|item| item.consume_value(|value| parsed.set_day(value)))
             .ok_or(InvalidComponent("day"))?;
-        let input = ascii_char_ignore_case::<b'T'>(input)
-            .ok_or(InvalidLiteral)?
-            .into_inner();
+
+        // RFC3339 allows any separator, not just `T`, not just `space`.
+        // cf. Section 5.6: Internet Date/Time Format:
+        //   NOTE: ISO 8601 defines date and time separated by "T".
+        //   Applications using this syntax may choose, for the sake of
+        //   readability, to specify a full-date and full-time separated by
+        //   (say) a space character.
+        // Specifically, rusqlite uses space separators.
+        let input = input.get(1..).ok_or(InvalidComponent("separator"))?;
+
         let input = exactly_n_digits::<2, _>(input)
             .and_then(|item| item.consume_value(|value| parsed.set_hour_24(value)))
             .ok_or(InvalidComponent("hour"))?;
@@ -618,9 +623,16 @@ impl sealed::Sealed for Rfc3339 {
         let input = dash(input).ok_or(InvalidLiteral)?.into_inner();
         let ParsedItem(input, day) =
             exactly_n_digits::<2, _>(input).ok_or(InvalidComponent("day"))?;
-        let input = ascii_char_ignore_case::<b'T'>(input)
-            .ok_or(InvalidLiteral)?
-            .into_inner();
+
+        // RFC3339 allows any separator, not just `T`, not just `space`.
+        // cf. Section 5.6: Internet Date/Time Format:
+        //   NOTE: ISO 8601 defines date and time separated by "T".
+        //   Applications using this syntax may choose, for the sake of
+        //   readability, to specify a full-date and full-time separated by
+        //   (say) a space character.
+        // Specifically, rusqlite uses space separators.
+        let input = input.get(1..).ok_or(InvalidComponent("separator"))?;
+
         let ParsedItem(input, hour) =
             exactly_n_digits::<2, _>(input).ok_or(InvalidComponent("hour"))?;
         let input = colon(input).ok_or(InvalidLiteral)?.into_inner();

@@ -27,7 +27,7 @@ pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Resul
         epub_builder.set_publication_date(*published_date);
     }
 
-    if let Some(summary) = &entry.summary {
+    if let Some(summary)= &entry.summary {
         // This will definitely be somewhat arbitrary with unicode
         // but we just want to avoid some feeds that stuff their
         // entire content into the summary field from polluting
@@ -44,24 +44,38 @@ pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Resul
         epub_builder.add_author(&author.name);
     });
 
-    match &entry.title {
+    // TODO: Not sure I enjoy unpacking the title twice...
+    // I should probably rewrite this function to have
+    // some invariant checks and give me my title variable
+    // and all others that I require at the start.
+    //
+    // This just leads to my annoyment at Rusts Option
+    // unpacking since I have to some weird dances.
+    let epub_file = match &entry.title {
         Some(title) => {
             let file_name = entry_title_to_file_name(
                 download_dir,
                 &title.content.replace('/', "_"),
             );
-            let epub_file = File::create(file_name)?;
+            File::create(file_name)?
+        }
+        None => return Err(Error::TitleExtractionError)
+    };
 
-            epub_builder
+    match &entry.title {
+        Some(title) => {
+            let _ = &epub_builder
                 .metadata("title", &title.content).unwrap()
                 .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))
-                .unwrap()
-                .generate(epub_file)
                 .unwrap();
-            Ok(())
         }
-        None => Err(Error::TitleExtractionError)
+        None => return Err(Error::TitleExtractionError)
     }
+
+    epub_builder
+        .generate(epub_file)
+        .unwrap();
+    Ok(())
 }
 
 pub fn entry_title_to_file_name(destination_dir: &str, title: &str) -> PathBuf {

@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
@@ -15,12 +14,12 @@ use crate::conn::{ConnectionCore, UnbufferedConnectionCommon};
 use crate::crypto::{CryptoProvider, SupportedKxGroup};
 use crate::enums::{CipherSuite, ProtocolVersion, SignatureScheme};
 use crate::error::Error;
-#[cfg(feature = "logging")]
 use crate::log::trace;
 use crate::msgs::enums::NamedGroup;
 use crate::msgs::handshake::ClientExtension;
 use crate::msgs::persist;
 use crate::suites::SupportedCipherSuite;
+use crate::sync::Arc;
 #[cfg(feature = "std")]
 use crate::time_provider::DefaultTimeProvider;
 use crate::time_provider::TimeProvider;
@@ -121,6 +120,13 @@ pub trait ResolvesClientCert: fmt::Debug + Send + Sync {
         sigschemes: &[SignatureScheme],
     ) -> Option<Arc<sign::CertifiedKey>>;
 
+    /// Return true if the client only supports raw public keys.
+    ///
+    /// See [RFC 7250](https://www.rfc-editor.org/rfc/rfc7250).
+    fn only_raw_public_keys(&self) -> bool {
+        false
+    }
+
     /// Return true if any certificates at all are available.
     fn has_certs(&self) -> bool;
 }
@@ -145,7 +151,7 @@ pub trait ResolvesClientCert: fmt::Debug + Send + Sync {
 ///
 /// * [`ClientConfig::max_fragment_size`]: the default is `None` (meaning 16kB).
 /// * [`ClientConfig::resumption`]: supports resumption with up to 256 server names, using session
-///    ids or tickets, with a max of eight tickets per server.
+///   ids or tickets, with a max of eight tickets per server.
 /// * [`ClientConfig::alpn_protocols`]: the default is empty -- no ALPN protocol is negotiated.
 /// * [`ClientConfig::key_log`]: key material is not logged.
 /// * [`ClientConfig::cert_decompressors`]: depends on the crate features, see [`compress::default_cert_decompressors()`].
@@ -310,10 +316,9 @@ impl ClientConfig {
         provider: Arc<CryptoProvider>,
     ) -> ConfigBuilder<Self, WantsVersions> {
         ConfigBuilder {
-            state: WantsVersions {
-                provider,
-                time_provider: Arc::new(DefaultTimeProvider),
-            },
+            state: WantsVersions {},
+            provider,
+            time_provider: Arc::new(DefaultTimeProvider),
             side: PhantomData,
         }
     }
@@ -336,10 +341,9 @@ impl ClientConfig {
         time_provider: Arc<dyn TimeProvider>,
     ) -> ConfigBuilder<Self, WantsVersions> {
         ConfigBuilder {
-            state: WantsVersions {
-                provider,
-                time_provider,
-            },
+            state: WantsVersions {},
+            provider,
+            time_provider,
             side: PhantomData,
         }
     }
@@ -404,12 +408,16 @@ impl ClientConfig {
             .find(|&scs| scs.suite() == suite)
     }
 
-    pub(super) fn find_kx_group(&self, group: NamedGroup) -> Option<&'static dyn SupportedKxGroup> {
+    pub(super) fn find_kx_group(
+        &self,
+        group: NamedGroup,
+        version: ProtocolVersion,
+    ) -> Option<&'static dyn SupportedKxGroup> {
         self.provider
             .kx_groups
             .iter()
             .copied()
-            .find(|skxg| skxg.name() == group)
+            .find(|skxg| skxg.usable_for_version(version) && skxg.name() == group)
     }
 
     pub(super) fn current_time(&self) -> Result<UnixTime, Error> {
@@ -503,10 +511,9 @@ pub enum Tls12Resumption {
 
 /// Container for unsafe APIs
 pub(super) mod danger {
-    use alloc::sync::Arc;
-
     use super::verify::ServerCertVerifier;
     use super::ClientConfig;
+    use crate::sync::Arc;
 
     /// Accessor for dangerous configuration options.
     #[derive(Debug)]
@@ -515,7 +522,7 @@ pub(super) mod danger {
         pub cfg: &'a mut ClientConfig,
     }
 
-    impl<'a> DangerousClientConfig<'a> {
+    impl DangerousClientConfig<'_> {
         /// Overrides the default `ServerCertVerifier` with something else.
         pub fn set_certificate_verifier(&mut self, verifier: Arc<dyn ServerCertVerifier>) {
             self.cfg.verifier = verifier;
@@ -603,7 +610,6 @@ impl EarlyData {
 
 #[cfg(feature = "std")]
 mod connection {
-    use alloc::sync::Arc;
     use alloc::vec::Vec;
     use core::fmt;
     use core::ops::{Deref, DerefMut};
@@ -617,6 +623,7 @@ mod connection {
     use crate::conn::{ConnectionCommon, ConnectionCore};
     use crate::error::Error;
     use crate::suites::ExtractedSecrets;
+    use crate::sync::Arc;
     use crate::ClientConfig;
 
     /// Stub that implements io::Write and dispatches to `write_early_data`.
@@ -641,7 +648,7 @@ mod connection {
         }
     }
 
-    impl<'a> io::Write for WriteEarlyData<'a> {
+    impl io::Write for WriteEarlyData<'_> {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             self.sess.write_early_data(buf)
         }
@@ -742,7 +749,7 @@ mod connection {
         /// it is concerned only with cryptography, whereas this _also_ covers TLS-level
         /// configuration that NIST recommends, as well as ECH HPKE suites if applicable.
         pub fn fips(&self) -> bool {
-            self.inner.core.data.fips
+            self.inner.core.common_state.fips
         }
 
         fn write_early_data(&mut self, data: &[u8]) -> io::Result<usize> {
@@ -805,8 +812,8 @@ impl ConnectionCore<ClientConnectionData> {
         common_state.set_max_fragment_size(config.max_fragment_size)?;
         common_state.protocol = proto;
         common_state.enable_secret_extraction = config.enable_secret_extraction;
+        common_state.fips = config.fips();
         let mut data = ClientConnectionData::new();
-        data.fips = config.fips();
 
         let mut cx = hs::ClientContext {
             common: &mut common_state,
@@ -891,15 +898,14 @@ impl MayEncryptEarlyData<'_> {
         early_data: &[u8],
         outgoing_tls: &mut [u8],
     ) -> Result<usize, EarlyDataError> {
-        let allowed = match self
+        let Some(allowed) = self
             .conn
             .core
             .data
             .early_data
             .check_write_opt(early_data.len())
-        {
-            Some(allowed) => allowed,
-            None => return Err(EarlyDataError::ExceededAllowedEarlyData),
+        else {
+            return Err(EarlyDataError::ExceededAllowedEarlyData);
         };
 
         self.conn
@@ -943,7 +949,6 @@ pub struct ClientConnectionData {
     pub(super) early_data: EarlyData,
     pub(super) resumption_ciphersuite: Option<SupportedCipherSuite>,
     pub(super) ech_status: EchStatus,
-    pub(super) fips: bool,
 }
 
 impl ClientConnectionData {
@@ -952,7 +957,6 @@ impl ClientConnectionData {
             early_data: EarlyData::new(),
             resumption_ciphersuite: None,
             ech_status: EchStatus::NotOffered,
-            fips: false,
         }
     }
 }

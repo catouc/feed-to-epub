@@ -143,25 +143,26 @@ impl Time {
         ]);
     }
 
-    /// Create a `Time` that is exactly midnight.
+    /// A `Time` that is exactly midnight. This is the smallest possible value for a `Time`.
     ///
     /// ```rust
     /// # use time::Time;
     /// # use time_macros::time;
     /// assert_eq!(Time::MIDNIGHT, time!(0:00));
     /// ```
-    pub const MIDNIGHT: Self = Self::MIN;
-
-    /// The smallest value that can be represented by `Time`.
-    ///
-    /// `00:00:00.0`
-    pub(crate) const MIN: Self =
+    #[doc(alias = "MIN")]
+    pub const MIDNIGHT: Self =
         Self::from_hms_nanos_ranged(Hours::MIN, Minutes::MIN, Seconds::MIN, Nanoseconds::MIN);
 
-    /// The largest value that can be represented by `Time`.
+    /// A `Time` that is one nanosecond before midnight. This is the largest possible value for a
+    /// `Time`.
     ///
-    /// `23:59:59.999_999_999`
-    pub(crate) const MAX: Self =
+    /// ```rust
+    /// # use time::Time;
+    /// # use time_macros::time;
+    /// assert_eq!(Time::MAX, time!(23:59:59.999_999_999));
+    /// ```
+    pub const MAX: Self =
         Self::from_hms_nanos_ranged(Hours::MAX, Minutes::MAX, Seconds::MAX, Nanoseconds::MAX);
 
     // region: constructors
@@ -659,7 +660,9 @@ impl Time {
     ///     time!(01:02:03.004_005_006).replace_millisecond(7),
     ///     Ok(time!(01:02:03.007))
     /// );
-    /// assert!(time!(01:02:03.004_005_006).replace_millisecond(1_000).is_err()); // 1_000 isn't a valid millisecond
+    /// assert!(time!(01:02:03.004_005_006)
+    ///     .replace_millisecond(1_000)
+    ///     .is_err()); // 1_000 isn't a valid millisecond
     /// ```
     #[must_use = "This method does not mutate the original `Time`."]
     pub const fn replace_millisecond(
@@ -679,7 +682,9 @@ impl Time {
     ///     time!(01:02:03.004_005_006).replace_microsecond(7_008),
     ///     Ok(time!(01:02:03.007_008))
     /// );
-    /// assert!(time!(01:02:03.004_005_006).replace_microsecond(1_000_000).is_err()); // 1_000_000 isn't a valid microsecond
+    /// assert!(time!(01:02:03.004_005_006)
+    ///     .replace_microsecond(1_000_000)
+    ///     .is_err()); // 1_000_000 isn't a valid microsecond
     /// ```
     #[must_use = "This method does not mutate the original `Time`."]
     pub const fn replace_microsecond(
@@ -699,7 +704,9 @@ impl Time {
     ///     time!(01:02:03.004_005_006).replace_nanosecond(7_008_009),
     ///     Ok(time!(01:02:03.007_008_009))
     /// );
-    /// assert!(time!(01:02:03.004_005_006).replace_nanosecond(1_000_000_000).is_err()); // 1_000_000_000 isn't a valid nanosecond
+    /// assert!(time!(01:02:03.004_005_006)
+    ///     .replace_nanosecond(1_000_000_000)
+    ///     .is_err()); // 1_000_000_000 isn't a valid nanosecond
     /// ```
     #[must_use = "This method does not mutate the original `Time`."]
     pub const fn replace_nanosecond(

@@ -62,6 +62,7 @@ There are many available implementations to choose from, here are some options:
 
 * Simple minimal loggers:
     * [`env_logger`](https://docs.rs/env_logger/*/env_logger/)
+    * [`colog`](https://docs.rs/colog/*/colog/)
     * [`simple_logger`](https://docs.rs/simple_logger/*/simple_logger/)
     * [`simplelog`](https://docs.rs/simplelog/*/simplelog/)
     * [`pretty_env_logger`](https://docs.rs/pretty_env_logger/*/pretty_env_logger/)
@@ -70,9 +71,13 @@ There are many available implementations to choose from, here are some options:
     * [`call_logger`](https://docs.rs/call_logger/*/call_logger/)
     * [`std-logger`](https://docs.rs/std-logger/*/std_logger/)
     * [`structured-logger`](https://docs.rs/structured-logger/latest/structured_logger/)
+    * [`clang_log`](https://docs.rs/clang_log/latest/clang_log)
+    * [`ftail`](https://docs.rs/ftail/latest/ftail/)
 * Complex configurable frameworks:
     * [`log4rs`](https://docs.rs/log4rs/*/log4rs/)
+    * [`logforth`](https://docs.rs/logforth/*/logforth/)
     * [`fern`](https://docs.rs/fern/*/fern/)
+    * [`spdlog-rs`](https://docs.rs/spdlog-rs/*/spdlog/)
 * Adaptors for other facilities:
     * [`syslog`](https://docs.rs/syslog/*/syslog/)
     * [`systemd-journal-logger`](https://docs.rs/systemd-journal-logger/*/systemd_journal_logger/)

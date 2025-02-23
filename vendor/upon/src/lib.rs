@@ -68,7 +68,7 @@
 //! let engine = upon::Engine::new();
 //! ```
 //!
-//! Next, [`add_template`][Engine::add_template] is used to compile and store a
+//! Next, [`add_template(..)`][Engine::add_template] is used to compile and store a
 //! template in the engine.
 //!
 //! ```
@@ -78,26 +78,16 @@
 //! ```
 //!
 //! Finally, the template is rendered by fetching it using
-//! [`get_template`][Engine::get_template] and calling
-//! [`render`][TemplateRef::render].
+//! [`template(..)`][Engine::template], calling
+//! [`render(..)`][TemplateRef::render] and rendering to a string.
 //!
 //! ```
 //! # let mut engine = upon::Engine::new();
 //! # engine.add_template("hello", "Hello {{ user.name }}!")?;
-//! let template = engine.get_template("hello").unwrap();
-//! let result = template.render(upon::value!{ user: { name: "John Smith" }}).to_string()?;
-//! assert_eq!(result, "Hello John Smith!");
-//! # Ok::<(), upon::Error>(())
-//! ```
-//!
-//! If the lifetime of the template source is shorter than the engine lifetime
-//! or you don't need to store the compiled template then you can also use the
-//! [`compile`][Engine::compile] function to return the template directly.
-//!
-//! ```
-//! # let engine = upon::Engine::new();
-//! let template = engine.compile("Hello {{ user.name }}!")?;
-//! let result = template.render(upon::value!{ user: { name: "John Smith" }}).to_string()?;
+//! let result = engine
+//!     .template("hello")
+//!     .render(upon::value!{ user: { name: "John Smith" }})
+//!     .to_string()?;
 //! assert_eq!(result, "Hello John Smith!");
 //! # Ok::<(), upon::Error>(())
 //! ```
@@ -107,8 +97,9 @@
 //! - The [`syntax`] module documentation outlines the template syntax.
 //! - The [`filters`] module documentation describes filters and how they work.
 //! - The [`fmt`] module documentation contains information on value formatters.
-//! - The [`examples/`][examples] directory in the repository contains concrete
-//!   code examples.
+//! - In addition to the examples in the current document, the
+//!   [`examples/`][examples] directory in the repository constains some more
+//!   concrete code examples.
 //!
 //! [examples]: https://github.com/rossmacarthur/upon/tree/trunk/examples
 //!
@@ -123,7 +114,7 @@
 //!
 //! - **`serde`** _(enabled by default)_ — Enables all serde support and pulls
 //!   in the [`serde`] crate as a dependency. If disabled then you can use
-//!   [`render_from`][TemplateRef::render_from] to render templates and
+//!   [`render_from(..)`][TemplateRef::render_from] to render templates and
 //!   construct the context using [`Value`]'s `From` impls.
 //!
 //! - **`unicode`** _(enabled by default)_ — Enables unicode support and pulls
@@ -140,6 +131,89 @@
 //! ```toml
 //! [dependencies]
 //! upon = { version = "...", default-features = false, features = ["serde"] }
+//! ```
+//!
+//! # Examples
+//!
+//! ## Nested templates
+//!
+//! You can include other templates by name using `{% include .. %}`.
+//!
+//! ```
+//! let mut engine = upon::Engine::new();
+//! engine.add_template("hello", "Hello {{ user.name }}!")?;
+//! engine.add_template("goodbye", "Goodbye {{ user.name }}!")?;
+//! engine.add_template("nested", "{% include \"hello\" %}\n{% include \"goodbye\" %}")?;
+//!
+//! let result = engine.template("nested")
+//!     .render(upon::value!{ user: { name: "John Smith" }})
+//!     .to_string()?;
+//! assert_eq!(result, "Hello John Smith!\nGoodbye John Smith!");
+//! # Ok::<(), upon::Error>(())
+//! ```
+//!
+//! ## Render to writer
+//!
+//! Instead of rendering to a string it is possible to render the template to
+//! any [`std::io::Write`] implementor using
+//! [`to_writer(..)`][crate::Renderer::to_writer].
+//!
+//! ```
+//! use std::io;
+//!
+//! let mut engine = upon::Engine::new();
+//! engine.add_template("hello", "Hello {{ user.name }}!")?;
+//!
+//! let mut stdout = io::BufWriter::new(io::stdout());
+//! engine
+//!     .template("hello")
+//!     .render(upon::value!{ user: { name: "John Smith" }})
+//!     .to_writer(&mut stdout)?;
+//! // Prints: Hello John Smith!
+//! # Ok::<(), upon::Error>(())
+//! ```
+//!
+//! ## Borrowed templates with short lifetimes
+//!
+//! If the lifetime of the template source is shorter than the engine lifetime
+//! or you don't need to store the compiled template then you can also use the
+//! [`compile(..)`][Engine::compile] function to return the template directly.
+//!
+//! ```
+//! # let engine = upon::Engine::new();
+//! let template = engine.compile("Hello {{ user.name }}!")?;
+//! let result = template
+//!     .render(&engine, upon::value!{ user: { name: "John Smith" }})
+//!     .to_string()?;
+//! assert_eq!(result, "Hello John Smith!");
+//! # Ok::<(), upon::Error>(())
+//! ```
+//!
+//! ## Custom template store and function
+//!
+//! The [`compile(..)`][Engine::compile] function can also be used in
+//! conjunction with a custom template store which can allow for more advanced
+//! use cases. For example: relative template paths or controlling template
+//! access.
+//!
+//! ```
+//! # let engine = upon::Engine::new();
+//! let mut store = std::collections::HashMap::<&str, upon::Template>::new();
+//! store.insert("hello", engine.compile("Hello {{ user.name }}!")?);
+//! store.insert("goodbye", engine.compile("Goodbye {{ user.name }}!")?);
+//! store.insert("nested", engine.compile("{% include \"hello\" %}\n{% include \"goodbye\" %}")?);
+//!
+//! let result = store.get("nested")
+//!     .unwrap()
+//!     .render(&engine, upon::value!{ user: { name: "John Smith" }})
+//!     .with_template_fn(|name| {
+//!         store
+//!             .get(name)
+//!             .ok_or_else(|| String::from("template not found"))
+//!     })
+//!     .to_string()?;
+//! assert_eq!(result, "Hello John Smith!\nGoodbye John Smith!");
+//! # Ok::<(), upon::Error>(())
 //! ```
 
 #![deny(unsafe_code)]
@@ -215,7 +289,9 @@ type ValueFn<'a> = dyn Fn(&[ValueMember]) -> std::result::Result<Value, String> 
 /// [`render_from_fn`][Template::render_from_fn].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ValueMember<'a> {
+    /// The type of member access (direct or optional).
     pub op: ValueAccessOp,
+    /// The index or key being accessed.
     pub access: ValueAccess<'a>,
 }
 
@@ -240,8 +316,12 @@ pub enum ValueAccessOp {
 }
 
 /// A compiled template created using [`Engine::compile`].
-pub struct Template<'engine, 'source> {
-    engine: &'engine Engine<'engine>,
+///
+/// For convenience this struct's lifetime is not tied to the lifetime of the
+/// engine. However, it is considered a logic error to attempt to render this
+/// template using a different engine than the one that created it. If that
+/// happens the render call may panic or produce incorrect output.
+pub struct Template<'source> {
     template: program::Template<'source>,
 }
 
@@ -386,11 +466,13 @@ impl<'engine> Engine<'engine> {
         N: Into<Cow<'engine, str>>,
         S: Into<Cow<'engine, str>>,
     {
-        let name = name.into();
-        let source = source.into();
-        let template = compile::template(self, source).map_err(|e| e.with_template_name(&name))?;
-        self.templates.insert(name, template);
-        Ok(())
+        match compile::template(self, source.into()) {
+            Ok(template) => {
+                self.templates.insert(name.into(), template);
+                Ok(())
+            }
+            Err(err) => Err(err.with_template_name(name.into().into())),
+        }
     }
 
     /// Lookup a template by name.
@@ -435,12 +517,12 @@ impl<'engine> Engine<'engine> {
     /// [`.add_template(..)`][Engine::add_template] here is that if the template
     /// source is borrowed, it does not need to outlive the engine.
     #[inline]
-    pub fn compile<'source>(&self, source: &'source str) -> Result<Template<'_, 'source>> {
-        let template = compile::template(self, Cow::Borrowed(source))?;
-        Ok(Template {
-            engine: self,
-            template,
-        })
+    pub fn compile<'source, S>(&self, source: S) -> Result<Template<'source>>
+    where
+        S: Into<Cow<'source, str>>,
+    {
+        let template = compile::template(self, source.into())?;
+        Ok(Template { template })
     }
 }
 
@@ -477,7 +559,7 @@ impl std::fmt::Debug for EngineBoxFn {
     }
 }
 
-impl<'render> Template<'render, 'render> {
+impl<'render> Template<'render> {
     /// Render the template using the provided [`serde`] value.
     ///
     /// The returned struct must be consumed using
@@ -486,11 +568,11 @@ impl<'render> Template<'render, 'render> {
     #[cfg(feature = "serde")]
     #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
     #[inline]
-    pub fn render<S>(&self, ctx: S) -> Renderer<'_, S>
+    pub fn render<S>(&self, engine: &'render Engine<'render>, ctx: S) -> Renderer<'_>
     where
         S: serde::Serialize,
     {
-        Renderer::with_serde(self.engine, &self.template, ctx)
+        Renderer::with_serde(engine, &self.template, None, ctx)
     }
 
     /// Render the template using the provided value.
@@ -499,8 +581,12 @@ impl<'render> Template<'render, 'render> {
     /// [`.to_string()`][crate::Renderer::to_string] or
     /// [`.to_writer(..)`][crate::Renderer::to_writer].
     #[inline]
-    pub fn render_from(&self, ctx: &'render Value) -> Renderer<'_> {
-        Renderer::with_value(self.engine, &self.template, ctx)
+    pub fn render_from(
+        &self,
+        engine: &'render Engine<'render>,
+        ctx: &'render Value,
+    ) -> Renderer<'_> {
+        Renderer::with_value(engine, &self.template, None, ctx)
     }
 
     /// Render the using the provided value function.
@@ -509,11 +595,11 @@ impl<'render> Template<'render, 'render> {
     /// [`.to_string()`][crate::Renderer::to_string] or
     /// [`.to_writer(..)`][crate::Renderer::to_writer].
     #[inline]
-    pub fn render_from_fn<F>(&self, value_fn: F) -> Renderer<'_>
+    pub fn render_from_fn<F>(&self, engine: &'render Engine<'render>, value_fn: F) -> Renderer<'_>
     where
         F: Fn(&[ValueMember<'_>]) -> std::result::Result<Value, String> + 'render,
     {
-        Renderer::with_value_fn(self.engine, &self.template, Box::new(value_fn))
+        Renderer::with_value_fn(engine, &self.template, None, Box::new(value_fn))
     }
 
     /// Returns the original template source.
@@ -523,7 +609,7 @@ impl<'render> Template<'render, 'render> {
     }
 }
 
-impl std::fmt::Debug for Template<'_, '_> {
+impl std::fmt::Debug for Template<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Template")
             .field("engine", &(..))
@@ -541,11 +627,11 @@ impl<'render> TemplateRef<'render> {
     #[cfg(feature = "serde")]
     #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
     #[inline]
-    pub fn render<S>(&self, ctx: S) -> Renderer<'_, S>
+    pub fn render<S>(&self, ctx: S) -> Renderer<'_>
     where
         S: serde::Serialize,
     {
-        Renderer::with_serde(self.engine, self.template, ctx)
+        Renderer::with_serde(self.engine, self.template, Some(self.name), ctx)
     }
 
     /// Render the template using the provided value.
@@ -555,7 +641,7 @@ impl<'render> TemplateRef<'render> {
     /// [`.to_writer(..)`][crate::Renderer::to_writer].
     #[inline]
     pub fn render_from(&self, ctx: &'render Value) -> Renderer<'render> {
-        Renderer::with_value(self.engine, self.template, ctx)
+        Renderer::with_value(self.engine, self.template, Some(self.name), ctx)
     }
 
     /// Render the using the provided value function.
@@ -568,7 +654,12 @@ impl<'render> TemplateRef<'render> {
     where
         F: Fn(&[ValueMember<'_>]) -> std::result::Result<Value, String> + 'render,
     {
-        Renderer::with_value_fn(self.engine, self.template, Box::new(value_fn))
+        Renderer::with_value_fn(
+            self.engine,
+            self.template,
+            Some(self.name),
+            Box::new(value_fn),
+        )
     }
 
     /// Returns the original template source.

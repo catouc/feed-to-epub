@@ -6,14 +6,14 @@ use crate::templates;
 use crate::toc::{Toc, TocElement};
 use crate::zip::Zip;
 use crate::ReferenceType;
+use crate::Result;
 use crate::{common, EpubContent};
 
 use std::io;
 use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
-
-use eyre::{bail, Context, Result};
+use upon::Engine;
 
 /// Represents the EPUB version.
 ///
@@ -38,6 +38,28 @@ pub enum PageDirection {
     Rtl,
 }
 
+
+/// Represents the EPUB `<meta>` content inside `content.opf` file.
+///
+/// <meta name="" content="">
+/// 
+#[derive(Debug)]
+pub struct MetadataOpf {
+    /// Name of the `<meta>` tag
+    pub name: String,
+    /// Content of the `<meta>` tag
+    pub content: String
+}
+
+impl MetadataOpf {
+    /// Create new instance
+    /// 
+    /// 
+    pub fn new(&self, meta_name: String, meta_content: String) -> Self {
+        Self { name: meta_name, content: meta_content }
+    }
+}
+
 impl ToString for PageDirection {
     fn to_string(&self) -> String {
         match &self {
@@ -47,15 +69,15 @@ impl ToString for PageDirection {
     }
 }
 
-impl std::str::FromStr for PageDirection {
-    type Err = eyre::Report;
+impl FromStr for PageDirection {
+    type Err = crate::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let s = s.to_lowercase();
         match s.as_ref() {
             "rtl" => Ok(PageDirection::Rtl),
             "ltr" => Ok(PageDirection::Ltr),
-            _ => bail!("Invalid page direction: {}", s),
+            _ => Err(crate::Error::PageDirectionError(s)),
         }
     }
 }
@@ -145,6 +167,7 @@ impl Content {
 #[derive(Debug)]
 pub struct EpubBuilder<Z: Zip> {
     version: EpubVersion,
+    direction: PageDirection,    
     zip: Z,
     files: Vec<Content>,
     metadata: Metadata,
@@ -152,6 +175,7 @@ pub struct EpubBuilder<Z: Zip> {
     stylesheet: bool,
     inline_toc: bool,
     escape_html: bool,
+    meta_opf: Vec<MetadataOpf>
 }
 
 impl<Z: Zip> EpubBuilder<Z> {
@@ -159,6 +183,7 @@ impl<Z: Zip> EpubBuilder<Z> {
     pub fn new(zip: Z) -> Result<EpubBuilder<Z>> {
         let mut epub = EpubBuilder {
             version: EpubVersion::V20,
+            direction: PageDirection::Ltr,
             zip,
             files: vec![],
             metadata: Metadata::default(),
@@ -166,6 +191,7 @@ impl<Z: Zip> EpubBuilder<Z> {
             stylesheet: false,
             inline_toc: false,
             escape_html: true,
+            meta_opf: Vec::new()
         };
 
         epub.zip
@@ -186,6 +212,41 @@ impl<Z: Zip> EpubBuilder<Z> {
     /// * 'V30`: EPUB 3.0.1
     pub fn epub_version(&mut self, version: EpubVersion) -> &mut Self {
         self.version = version;
+        self
+    }
+    
+    /// Set EPUB Direction (default: Ltr)
+    ///
+    /// * `Ltr`: Left-To-Right 
+    /// * `Rtl`: Right-To-Left 
+    /// 
+    /// 
+    pub fn epub_direction(&mut self, direction: PageDirection) -> &mut Self {
+        self.direction = direction;
+        self
+    }
+    
+
+    /// Add custom <meta> to `content.opf`
+    /// Syntax: `self.add_metadata_opf(name, content)`
+    /// 
+    /// ### Example
+    /// If you wanna add `<meta name="primary-writing-mode" content="vertical-rl"/>` into `content.opf`
+    /// 
+    /// ```rust
+    /// use epub_builder::EpubBuilder;
+    /// use epub_builder::ZipCommand;
+    /// use epub_builder::MetadataOpf;
+    /// let mut builder = EpubBuilder::new(ZipCommand::new().unwrap()).unwrap();
+
+    /// builder.add_metadata_opf(MetadataOpf {
+    ///     name: String::from("primary-writing-mode"),
+    ///     content: String::from("vertical-rl")
+    /// });
+    /// ```
+    /// 
+    pub fn add_metadata_opf(&mut self, item: MetadataOpf) -> &mut Self {
+        self.meta_opf.push(item);
         self
     }
 
@@ -243,7 +304,7 @@ impl<Z: Zip> EpubBuilder<Z> {
             }
             "license" => self.metadata.license = Some(value.into()),
             "toc_name" => self.metadata.toc_name = value.into(),
-            s => bail!("invalid metadata '{}'", s),
+            s => Err(crate::Error::InvalidMetadataError(s.to_string()))?,
         }
         Ok(self)
     }
@@ -269,16 +330,16 @@ impl<Z: Zip> EpubBuilder<Z> {
     }
 
     /// Tells whether fields should be HTML-escaped.
-    /// 
+    ///
     /// * `true`: fields such as titles, description, and so on will be HTML-escaped everywhere (default)
-    /// * `false`: fields will be left as is (letting you in charge of making 
+    /// * `false`: fields will be left as is (letting you in charge of making
     /// sure they do not contain anything illegal, e.g. < and > characters)
     pub fn escape_html(&mut self, val: bool) {
         self.escape_html = val;
     }
 
     /// Sets the language of the EPUB
-    /// 
+    ///
     /// This is quite important as EPUB renderers rely on it
     /// for e.g. hyphenating words.
     pub fn set_lang<S: Into<String>>(&mut self, value: S) {
@@ -505,7 +566,7 @@ impl<Z: Zip> EpubBuilder<Z> {
     /// let mut epub: Vec<u8> = vec!();
     /// builder.generate(&mut epub).unwrap();
     /// ```
-    pub fn generate<W: io::Write>(&mut self, to: W) -> Result<()> {
+    pub fn generate<W: io::Write>(mut self, to: W) -> Result<()> {
         // If no styleesheet was provided, generate a dummy one
         if !self.stylesheet {
             self.stylesheet(b"".as_ref())?;
@@ -551,6 +612,14 @@ impl<Z: Zip> EpubBuilder<Z> {
                 common::encode_html(rights, self.escape_html),
             ));
         }
+        for meta in &self.meta_opf{
+            optional.push(format!(
+                "<meta name=\"{}\" content=\"{}\"/>", 
+                common::encode_html(&meta.name, self.escape_html),
+                common::encode_html(&meta.content, self.escape_html),
+            ));
+        }
+
         let date_modified = self
             .metadata
             .date_modified
@@ -629,7 +698,7 @@ impl<Z: Zip> EpubBuilder<Z> {
         }
 
         let data = {
-            let mut authors: Vec<_> = vec!{};
+            let mut authors: Vec<_> = vec![];
             for (i, author) in self.metadata.author.iter().enumerate() {
                 let author = upon::value! {
                     id_attr: html_escape::encode_double_quoted_attribute(&i.to_string()),
@@ -649,17 +718,22 @@ impl<Z: Zip> EpubBuilder<Z> {
                 items: common::indent(items.join("\n"), 2), // Not escaped: XML content
                 itemrefs: common::indent(itemrefs.join("\n"), 2), // Not escaped: XML content
                 date_modified: html_escape::encode_text(&date_modified.to_string()),
-                uuid: html_escape::encode_text(&uuid), 
+                uuid: html_escape::encode_text(&uuid),
                 guide: common::indent(guide.join("\n"), 2), // Not escaped: XML content
                 date_published: if let Some(date) = date_published { date.to_string() } else { String::new() },
             }
         };
 
-        let mut res:Vec<u8> = vec![];
+        let mut res: Vec<u8> = vec![];
         match self.version {
-            EpubVersion::V20 => templates::v2::CONTENT_OPF.render(&data).to_writer(&mut res),
-            EpubVersion::V30 => templates::v3::CONTENT_OPF.render(&data).to_writer(&mut res),
-        }.wrap_err("could not render template for content.opf")?;
+            EpubVersion::V20 => templates::v2::CONTENT_OPF.render(&Engine::new(), &data).to_writer(&mut res),
+            EpubVersion::V30 => templates::v3::CONTENT_OPF.render(&Engine::new(), &data).to_writer(&mut res),
+        }
+        .map_err(|e| crate::Error::TemplateError {
+            msg: "could not render template for content.opf".to_string(),
+            cause: e.into(),
+        })?;
+        //.wrap_err("could not render template for content.opf")?;
 
         Ok(res)
     }
@@ -676,9 +750,12 @@ impl<Z: Zip> EpubBuilder<Z> {
         };
         let mut res: Vec<u8> = vec![];
         templates::TOC_NCX
-            .render(&data)
+            .render(&Engine::new(), &data)
             .to_writer(&mut res)
-            .wrap_err("error rendering toc.ncx template")?;
+            .map_err(|e| crate::Error::TemplateError {
+                msg: "error rendering toc.ncx template".to_string(),
+                cause: e.into(),
+            })?;
         Ok(res)
     }
 
@@ -722,7 +799,7 @@ impl<Z: Zip> EpubBuilder<Z> {
             }
         }
 
-        let data = upon::value!{
+        let data = upon::value! {
             content: content, // Not escaped: XML content
             toc_name: common::encode_html(&self.metadata.toc_name, self.escape_html),
             generator_attr: html_escape::encode_double_quoted_attribute(&self.metadata.generator),
@@ -738,12 +815,16 @@ impl<Z: Zip> EpubBuilder<Z> {
                 String::new()
             },
         };
-        
+
         let mut res: Vec<u8> = vec![];
         match self.version {
-            EpubVersion::V20 => templates::v2::NAV_XHTML.render(&data).to_writer(&mut res),
-            EpubVersion::V30 => templates::v3::NAV_XHTML.render(&data).to_writer(&mut res),
-        }.wrap_err("error rendering nav.xhtml template")?;
+            EpubVersion::V20 => templates::v2::NAV_XHTML.render(&Engine::new(), &data).to_writer(&mut res),
+            EpubVersion::V30 => templates::v3::NAV_XHTML.render(&Engine::new(), &data).to_writer(&mut res),
+        }
+        .map_err(|e| crate::Error::TemplateError {
+            msg: "error rendering nav.xhtml template".to_string(),
+            cause: e.into(),
+        })?;
         Ok(res)
     }
 }
@@ -752,9 +833,9 @@ impl<Z: Zip> EpubBuilder<Z> {
 // Ordering to to look as similar as possible to the W3 Recommendation ruleset
 // Slightly more permissive, there are some that are invalid start chars, but this is ok.
 fn is_id_char(c: char) -> bool {
-    ('A'..='Z').contains(&c)
+    c.is_ascii_uppercase()
         || c == '_'
-        || ('a'..='z').contains(&c)
+        || c.is_ascii_lowercase()
         || ('\u{C0}'..='\u{D6}').contains(&c)
         || ('\u{D8}'..='\u{F6}').contains(&c)
         || ('\u{F8}'..='\u{2FF}').contains(&c)
@@ -769,7 +850,7 @@ fn is_id_char(c: char) -> bool {
         || ('\u{10000}'..='\u{EFFFF}').contains(&c)
         || c == '-'
         || c == '.'
-        || ('0'..='9').contains(&c)
+        || c.is_ascii_digit()
         || c == '\u{B7}'
         || ('\u{0300}'..='\u{036F}').contains(&c)
         || ('\u{203F}'..='\u{2040}').contains(&c)
@@ -777,5 +858,5 @@ fn is_id_char(c: char) -> bool {
 
 // generate an id compatible string, replacing all none ID chars to underscores
 fn to_id(s: &str) -> String {
-    s.replace(|c: char| !is_id_char(c), "_")
+    "id_".to_string() + &s.replace(|c: char| !is_id_char(c), "_")
 }

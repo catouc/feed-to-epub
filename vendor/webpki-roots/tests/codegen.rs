@@ -14,11 +14,11 @@ async fn new_generated_code_is_fresh() {
     let tls_roots_map = fetch_ccadb_roots().await;
     let mut code = String::with_capacity(256 * 1_024);
     code.push_str(HEADER);
-    code.push_str("pub const TLS_SERVER_ROOTS: &[TrustAnchor] = &[\n");
+    code.push_str("pub const TLS_SERVER_ROOTS: &[TrustAnchor<'static>] = &[\n");
     let (mut subject, mut spki, mut name_constraints) =
         (String::new(), String::new(), String::new());
 
-    for (_, root) in tls_roots_map {
+    for root in tls_roots_map.values() {
         // Verify the DER FP matches the metadata FP.
         let der = root.der();
         let calculated_fp = digest::digest(&digest::SHA256, &der);
@@ -141,7 +141,7 @@ const HEADER: &str = r#"//! A compiled-in copy of the root certificates trusted 
 //!
 //! ```rust
 //! let root_store = rustls::RootCertStore {
-//!   roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
+//!   roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
 //! };
 //! ```
 //!
@@ -162,6 +162,7 @@ const HEADER: &str = r#"//! A compiled-in copy of the root certificates trusted 
 #![no_std]
 #![forbid(unsafe_code, unstable_features)]
 #![deny(
+    elided_lifetimes_in_paths,
     trivial_casts,
     trivial_numeric_casts,
     unused_import_braces,

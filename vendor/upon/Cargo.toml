@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.60"
 name = "upon"
-version = "0.7.1"
+version = "0.8.1"
 authors = ["Ross MacArthur <ross@macarthur.io>"]
 include = [
     "src/**/*",
@@ -23,11 +23,11 @@ include = [
 description = "A simple, powerful template engine with minimal dependencies and configurable delimiters"
 readme = "README.md"
 keywords = [
-    "engine",
     "template",
-    "jinja",
+    "jinja2",
+    "liquid",
+    "mustache",
     "handlebars",
-    "html",
 ]
 categories = ["template-engine"]
 license = "MIT OR Apache-2.0"

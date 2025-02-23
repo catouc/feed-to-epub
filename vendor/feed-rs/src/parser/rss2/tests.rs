@@ -32,7 +32,7 @@ fn test_example_1() {
                 .link(Link::new("http://www.example.com/blog/post/1", None))
                 .id("7bd204c6-1655-4c27-aeee-53f933c5395f")
                 .published("Sun, 06 Sep 2009 16:20:00 +0000")
-                .updated_parsed("Mon, 06 Sep 2010 00:01:00 +0000"),
+                .updated_parsed("Sun, 06 Sep 2009 16:20:00 +0000"),
         ); // copy from feed
 
     // Check
@@ -69,7 +69,7 @@ fn test_example_2() {
             "#.to_owned()))
             .id("http://www.nasa.gov/press-release/nasa-television-to-broadcast-space-station-departure-of-cygnus-cargo-ship")
             .published("Thu, 01 Aug 2019 16:15 EDT")
-            .updated(actual.updated)
+            .updated_parsed("Thu, 01 Aug 2019 16:15 EDT")
             .media(MediaObject::default()
                 .content(MediaContent::new()
                     .url("http://www.nasa.gov/sites/default/files/styles/1x1_cardfeed/public/thumbnails/image/47616261882_4bb534d293_k.jpg?itok=Djjjs81t")
@@ -107,7 +107,7 @@ fn test_example_3() {
             .summary(Text::html("Isaac Chotiner talks with the historian Tim Naftali, who published the text and audio of a\n                taped call, from 1971, in which Reagan described the African delegates to the U.N. in luridly racist\n                terms.\n            ".into()))
             .category(Category::new("News / Q. & A."))
             .published("Fri, 02 Aug 2019 15:35:34 +0000")
-            .updated(actual.updated)
+            .updated_parsed("Fri, 02 Aug 2019 15:35:34 +0000")
             .media(MediaObject::default()
                 .thumbnail(MediaThumbnail::new(Image::new("https://media.newyorker.com/photos/5d4211a4ba8a9c0009a57cfd/master/pass/Chotiner-ReaganRacismNaftali-3.jpg".into()).width(2560).height(1819)))
             )
@@ -120,9 +120,11 @@ fn test_example_3() {
 // Structured event data on earthquakes
 #[test]
 fn test_example_4() {
-    // Parse the feed
+    // Parse the feed; note that the result with sanitization active differs from the expected,
+    // so we will explicitly disable sanitization for this test.
     let test_data = test::fixture_as_string("rss2/rss_2.0_example_4.xml");
-    let actual = parser::parse(test_data.as_bytes()).unwrap();
+    let p = parser::Builder::new().sanitize_content(false).build();
+    let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
     let expected = Feed::new(FeedType::RSS2)
@@ -193,6 +195,7 @@ fn test_example_5() {
                 ))
                 .link(Link::new("https://arstechnica.com/?p=1546121", None))
                 .published("Mon, 05 Aug 2019 23:11:09 +0000")
+                .updated_parsed("Mon, 05 Aug 2019 23:11:09 +0000")
                 .category(Category::new("Tech"))
                 .category(Category::new("alphabet"))
                 .category(Category::new("apple"))
@@ -204,8 +207,7 @@ fn test_example_5() {
                     Content::default()
                         .body("Google co-founder Larry Page is now CEO of Alphabet.")
                         .content_type("text/html"),
-                )
-                .updated(actual.updated),
+                ),
         );
 
     // Check
@@ -215,9 +217,11 @@ fn test_example_5() {
 // Trailers from Apple (no UUID)
 #[test]
 fn test_example_6() {
-    // Parse the feed
+    // Parse the feed; note that the result with sanitization active differs from the expected,
+    // so we will explicitly disable sanitization for this test.
     let test_data = test::fixture_as_string("rss2/rss_2.0_example_6.xml");
-    let actual = parser::parse(test_data.as_bytes()).unwrap();
+    let p = parser::Builder::new().sanitize_content(false).build();
+    let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
     let expected = Feed::new(FeedType::RSS2)
@@ -237,8 +241,8 @@ fn test_example_6() {
                 .body(r#"<span style="font-size: 16px; font-weight: 900; text-decoration: underline;">Vitalina Varela - Trailer</span>"#)
                 .content_type("text/html"))
             .published("2020-02-06T08:00:00Z")
-            .id("73226f21f249d758bd97a1fac90897d2")        // hash of the link
-            .updated(actual.updated));
+            .updated_parsed("2020-02-06T08:00:00Z")
+            .id("73226f21f249d758bd97a1fac90897d2")); // hash of the link
 
     // Check
     assert_eq!(actual, expected);
@@ -249,20 +253,22 @@ fn test_wirecutter() {
     let test_data = test::fixture_as_string("rss2/rss_2.0_wirecutter.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
-    let entry = actual.entries.get(0).expect("sample feed has one entry");
-    let category = entry.categories.get(0).expect("entry has one category");
+    let entry = actual.entries.first().expect("sample feed has one entry");
+    let category = entry.categories.first().expect("entry has one category");
     assert_eq!(category.term, "Uncategorized");
 
-    let author = entry.authors.get(0).expect("entry has one author");
+    let author = entry.authors.first().expect("entry has one author");
     assert_eq!(author.name, "James Austin");
 }
 
 // Verify we can parse the example contained in the RSS 2.0 specification
 #[test]
 fn test_spec_1() {
-    // Parse the feed
+    // Parse the feed; note that the result with sanitization active differs from the expected,
+    // so we will explicitly disable sanitization for this test.
     let test_data = test::fixture_as_string("rss2/rss_2.0_spec_1.xml");
-    let actual = parser::parse(test_data.as_bytes()).unwrap();
+    let p = parser::Builder::new().sanitize_content(false).build();
+    let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
     let expected = Feed::new(FeedType::RSS2)
@@ -287,8 +293,8 @@ fn test_spec_1() {
                     .to_owned(),
                 ))
                 .published("Sun, 29 Sep 2002 19:59:01 GMT")
-                .id("http://scriptingnews.userland.com/backissues/2002/09/29#When:12:59:01PM")
-                .updated_parsed("Mon, 30 Sep 2002 11:00:00 GMT"),
+                .updated_parsed("Sun, 29 Sep 2002 19:59:01 GMT")
+                .id("http://scriptingnews.userland.com/backissues/2002/09/29#When:12:59:01PM"),
         ) // copy from feed
         .entry(
             Entry::default()
@@ -300,8 +306,8 @@ fn test_spec_1() {
                     .to_owned(),
                 ))
                 .published("Mon, 30 Sep 2002 01:52:02 GMT")
-                .id("http://scriptingnews.userland.com/backissues/2002/09/29#When:6:52:02PM")
-                .updated_parsed("Mon, 30 Sep 2002 11:00:00 GMT"),
+                .updated_parsed("Mon, 30 Sep 2002 01:52:02 GMT")
+                .id("http://scriptingnews.userland.com/backissues/2002/09/29#When:6:52:02PM"),
         ); // copy from feed
 
     // Check
@@ -352,9 +358,11 @@ fn test_rockpapershotgun() {
 // Verifies that we can handle mixed MediaRSS and itunes/enclosure
 #[test]
 fn test_spiegel() {
-    // Parse the feed
+    // Parse the feed; note that the result with sanitization active differs from the expected,
+    // so we will explicitly disable sanitization for this test.
     let test_data = test::fixture_as_string("rss2/rss_2.0_spiegel.xml");
-    let actual = parser::parse(test_data.as_bytes()).unwrap();
+    let p = parser::Builder::new().sanitize_content(false).build();
+    let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
     let expected = Feed::new(FeedType::RSS2)
@@ -390,6 +398,7 @@ fn test_spiegel() {
                 .summary(Text::html("Die wichtigsten Nachrichten aus der SPIEGEL-Redaktion. \nSee omnystudio.com/listener for privacy information.".into()))
                 .link(Link::new("https://omny.fm/shows/spiegel-update-die-nachrichten/07-02-die-wochenvorschau-lockdown-verl-ngerung-kri", None))
                 .published("2021-02-06T23:01:00Z")
+                .updated_parsed("2021-02-06T23:01:00Z")
                 .id("c7e3cca2-665e-4bc4-bcac-acc6011b9fa2")
                 // <enclosure>, media: and itunes: tags
                 .media(MediaObject::default()
@@ -398,7 +407,7 @@ fn test_spiegel() {
                     .credit("DER SPIEGEL")
                     .thumbnail(MediaThumbnail::new(Image::new("https://www.omnycontent.com/d/programs/5ac1e950-45c7-4eb7-87c0-aa0f018441b8/bb17ca27-51f4-4349-bc1e-abc00102c975/image.jpg?t=1589902935&size=Large".into())))
                     .content(MediaContent::new()
-                        .url("https://traffic.omny.fm/d/clips/5ac1e950-45c7-4eb7-87c0-aa0f018441b8/bb17ca27-51f4-4349-bc1e-abc00102c975/c7e3cca2-665e-4bc4-bcac-acc6011b9fa2/audio.mp3?utm_source=Podcast&in_playlist=4c18e072-24d2-4d60-9a42-abc00102c97e&t=1612652510")
+                        .url("https://omny.fm/shows/spiegel-update-die-nachrichten/07-02-die-wochenvorschau-lockdown-verl-ngerung-kri/embed")
                         .content_type("audio/mpeg")
                     )
                     .content(MediaContent::new()
@@ -463,6 +472,7 @@ fn test_bbc() {
                 .title(Text::new("Marcus Aurelius".into()))
                 .summary(Text::html("Melvyn Bragg and guests discuss...".into()))
                 .published("Thu, 25 Feb 2021 10:15:00 +0000")
+                .updated_parsed("Thu, 25 Feb 2021 10:15:00 +0000")
                 .id("urn:bbc:podcast:m000sjxt")
                 .link(Link::new("http://www.bbc.co.uk/programmes/m000sjxt", None))
                 // <enclosure>,  media: and itunes: tags
@@ -494,9 +504,11 @@ fn test_bbc() {
 // Verifies that we can handle mixed MediaRSS and itunes/enclosure
 #[test]
 fn test_ch9() {
-    // Parse the feed
+    // Parse the feed; note that the result with sanitization active differs from the expected,
+    // so we will explicitly disable sanitization for this test.
     let test_data = test::fixture_as_string("rss2/rss_2.0_ch9.xml");
-    let actual = parser::parse(test_data.as_bytes()).unwrap();
+    let p = parser::Builder::new().sanitize_content(false).build();
+    let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
     let expected = Feed::new(FeedType::RSS2)
@@ -532,7 +544,7 @@ fn test_ch9() {
                     None,
                 ))
                 .published("Fri, 26 Feb 2021 20:00:00 GMT")
-                .updated_parsed("Sat, 27 Feb 2021 06:55:01 GMT")
+                .updated_parsed("Fri, 26 Feb 2021 20:00:00 GMT")
                 .id("https://channel9.msdn.com/Shows/Azure-Friday/Troubleshoot-AKS-cluster-issues-with-AKS-Diagnostics-and-AKS-Periscope")
                 .author(Person::new("Scott Hanselman, Rob Caron"))
                 .category(Category::new("Azure"))
@@ -681,6 +693,7 @@ fn test_ghost_no_ws() {
         assert!(entry.content.is_some());
     }
 }
+
 // Verifies that we extract the 'content:encoded' element correctly from a variety of problematic feeds
 #[test]
 fn test_ghost_feeds() {
@@ -699,7 +712,7 @@ fn test_ghost_feeds() {
 fn test_matrix() {
     let test_data = test::fixture_as_string("rss2/rss_2.0_matrix.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
-    let entry = actual.entries.get(0).expect("feed has 1 entry");
+    let entry = actual.entries.first().expect("feed has 1 entry");
 
     // The content should not be present
     assert!(entry.content.is_none());
@@ -710,7 +723,7 @@ fn test_matrix() {
 fn test_rfc1123_ilgiornale() {
     let test_data = test::fixture_as_string("rss2/rss_2.0_ilgiornale.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
-    let entry = actual.entries.get(0).expect("feed has 1 entry");
+    let entry = actual.entries.first().expect("feed has 1 entry");
 
     // Should have the expected date
     assert_eq!(entry.published.unwrap(), Utc.with_ymd_and_hms(2022, 11, 15, 20, 15, 4).unwrap());
@@ -721,7 +734,7 @@ fn test_rfc1123_ilgiornale() {
 fn test_rfc1123_ilmessaggero() {
     let test_data = test::fixture_as_string("rss2/rss_2.0_ilmessaggero.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
-    let entry = actual.entries.get(0).expect("feed has 1 entry");
+    let entry = actual.entries.first().expect("feed has 1 entry");
 
     // Should have the expected date
     assert_eq!(entry.published.unwrap(), Utc.with_ymd_and_hms(2022, 11, 15, 23, 38, 15).unwrap());
@@ -736,10 +749,10 @@ fn test_trim_whitespace_text_nodes() {
 
     assert!(actual.description.unwrap().content.starts_with("<p>Twice-monthly community updates"));
 
-    let entry = actual.entries.get(0).expect("feed has 1 entry");
+    let entry = actual.entries.first().expect("feed has 1 entry");
     assert!(entry.summary.as_ref().unwrap().content.starts_with("<p>The University of What It Is"));
 
-    let media = entry.media.get(0).expect("entry has 1 media item");
+    let media = entry.media.first().expect("entry has 1 media item");
     assert!(media.description.as_ref().unwrap().content.starts_with("The University of What It Is"));
 }
 
@@ -748,7 +761,7 @@ fn test_trim_whitespace_text_nodes() {
 fn test_published_from_dc_date() {
     let test_data = test::fixture_as_string("rss2/rss_2.0_dbengines.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
-    let entry = actual.entries.get(0).expect("feed has 1 entry");
+    let entry = actual.entries.first().expect("feed has 1 entry");
     assert_eq!(entry.published.unwrap(), Utc.with_ymd_and_hms(2023, 1, 3, 15, 0, 0).unwrap());
 }
 
@@ -768,7 +781,7 @@ fn test_custom_timestamp_parser() {
         .build()
         .parse(test_data.as_bytes())
         .unwrap();
-    let entry = actual.entries.get(0).expect("feed has 1 entry");
+    let entry = actual.entries.first().expect("feed has 1 entry");
     assert_eq!(entry.published.unwrap(), Utc.with_ymd_and_hms(2023, 12, 16, 19, 2, 33).unwrap());
 }
 
@@ -783,4 +796,15 @@ fn test_subcategories() {
 
     let subcat = &category.subcategories[0];
     assert_eq!("Parenting", subcat.term.as_str());
+}
+
+// Verifies that 'media:content' elements without a URL are parsed via the child media:player info
+#[test]
+fn test_media_content_player() {
+    let test_data = test::fixture_as_string("rss2/rss_2.0_vimeo_media.xml");
+    let actual = parser::parse(test_data.as_bytes()).unwrap();
+
+    let entry = &actual.entries[0];
+    let content_url = entry.media[0].content[0].url.as_ref().unwrap();
+    assert_eq!("https://player.vimeo.com/video/1013595996?h=b1b80eff69", content_url.as_str());
 }

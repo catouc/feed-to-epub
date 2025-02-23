@@ -172,9 +172,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// use time::serde;
 /// use time::format_description::well_known::{iso8601, Iso8601};
 ///
+/// # #[allow(dead_code)]
 /// const CONFIG: iso8601::EncodedConfig = iso8601::Config::DEFAULT
 ///     .set_year_is_six_digits(false)
 ///     .encode();
+/// # #[allow(dead_code)]
 /// const FORMAT: Iso8601<CONFIG> = Iso8601::<CONFIG>;
 ///
 /// // Makes a module `mod my_format { ... }`.
@@ -203,7 +205,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// ```
 /// 
 /// [`format_description::parse()`]: crate::format_description::parse()
-#[cfg(all(feature = "macros", any(feature = "formatting", feature = "parsing"),))]
+#[cfg(all(feature = "macros", any(feature = "formatting", feature = "parsing")))]
 pub use time_macros::serde_format_description as format_description;
 
 use self::visitor::Visitor;
@@ -253,9 +255,10 @@ impl Serialize for Duration {
         #[cfg(feature = "serde-human-readable")]
         if serializer.is_human_readable() {
             return serializer.collect_str(&format_args!(
-                "{}.{:>09}",
-                self.whole_seconds(),
-                self.subsec_nanoseconds().abs()
+                "{}{}.{:>09}",
+                if self.is_negative() { "-" } else { "" },
+                self.whole_seconds().unsigned_abs(),
+                self.subsec_nanoseconds().abs(),
             ));
         }
 
@@ -402,22 +405,27 @@ impl<'a> Deserialize<'a> for Time {
 // endregion Time
 
 // region: UtcOffset
+// FIXME: turn these constants into `const { ... }` blocks once we can depend on Rust 1.79.
+#[cfg(feature = "parsing")]
+const UTC_OFFSET_HOUR: modifier::OffsetHour = {
+    let mut m = modifier::OffsetHour::default();
+    m.sign_is_mandatory = true;
+    m
+};
+#[cfg(feature = "parsing")]
+const UTC_OFFSET_MINUTE: modifier::OffsetMinute = modifier::OffsetMinute::default();
+#[cfg(feature = "parsing")]
+const UTC_OFFSET_SECOND: modifier::OffsetSecond = modifier::OffsetSecond::default();
 /// The format used when serializing and deserializing a human-readable `UtcOffset`.
 #[cfg(feature = "parsing")]
 const UTC_OFFSET_FORMAT: &[BorrowedFormatItem<'_>] = &[
-    BorrowedFormatItem::Component(Component::OffsetHour({
-        let mut m = modifier::OffsetHour::default();
-        m.sign_is_mandatory = true;
-        m
-    })),
+    BorrowedFormatItem::Component(Component::OffsetHour(UTC_OFFSET_HOUR)),
     BorrowedFormatItem::Optional(&BorrowedFormatItem::Compound(&[
         BorrowedFormatItem::Literal(b":"),
-        BorrowedFormatItem::Component(Component::OffsetMinute(modifier::OffsetMinute::default())),
+        BorrowedFormatItem::Component(Component::OffsetMinute(UTC_OFFSET_MINUTE)),
         BorrowedFormatItem::Optional(&BorrowedFormatItem::Compound(&[
             BorrowedFormatItem::Literal(b":"),
-            BorrowedFormatItem::Component(Component::OffsetSecond(
-                modifier::OffsetSecond::default(),
-            )),
+            BorrowedFormatItem::Component(Component::OffsetSecond(UTC_OFFSET_SECOND)),
         ])),
     ])),
 ];

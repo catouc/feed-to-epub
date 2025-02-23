@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.61"
 name = "syn"
-version = "2.0.67"
+version = "2.0.98"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 build = false
 include = [
@@ -25,6 +25,7 @@ include = [
     "/src/**",
     "/tests/**",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -45,7 +46,10 @@ repository = "https://github.com/dtolnay/syn"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--generate-link-to-definition"]
+rustdoc-args = [
+    "--generate-link-to-definition",
+    "--extend-css=src/gen/token.css",
+]
 targets = ["x86_64-unknown-linux-gnu"]
 
 [package.metadata.playground]
@@ -56,6 +60,29 @@ features = [
     "fold",
     "extra-traits",
 ]
+
+[features]
+clone-impls = []
+default = [
+    "derive",
+    "parsing",
+    "printing",
+    "clone-impls",
+    "proc-macro",
+]
+derive = []
+extra-traits = []
+fold = []
+full = []
+parsing = []
+printing = ["dep:quote"]
+proc-macro = [
+    "proc-macro2/proc-macro",
+    "quote?/proc-macro",
+]
+test = ["syn-test-suite/all-features"]
+visit = []
+visit-mut = []
 
 [lib]
 name = "syn"
@@ -163,6 +190,10 @@ name = "test_ty"
 path = "tests/test_ty.rs"
 
 [[test]]
+name = "test_unparenthesize"
+path = "tests/test_unparenthesize.rs"
+
+[[test]]
 name = "test_visibility"
 path = "tests/test_visibility.rs"
 
@@ -188,7 +219,7 @@ required-features = [
 ]
 
 [dependencies.proc-macro2]
-version = "1.0.83"
+version = "1.0.91"
 default-features = false
 
 [dependencies.quote]
@@ -219,29 +250,6 @@ version = "0"
 
 [dev-dependencies.termcolor]
 version = "1"
-
-[features]
-clone-impls = []
-default = [
-    "derive",
-    "parsing",
-    "printing",
-    "clone-impls",
-    "proc-macro",
-]
-derive = []
-extra-traits = []
-fold = []
-full = []
-parsing = []
-printing = ["dep:quote"]
-proc-macro = [
-    "proc-macro2/proc-macro",
-    "quote?/proc-macro",
-]
-test = ["syn-test-suite/all-features"]
-visit = []
-visit-mut = []
 
 [target."cfg(not(miri))".dev-dependencies.flate2]
 version = "1"

@@ -12,7 +12,7 @@ Add this in your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-epub-builder = "0.6"
+epub-builder = "0.8"
 ```
 
 ## Example

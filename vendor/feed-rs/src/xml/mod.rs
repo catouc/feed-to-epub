@@ -7,7 +7,7 @@ use std::mem;
 
 use quick_xml::events::{BytesCData, BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::name::ResolveResult;
-use quick_xml::{escape, NsReader, Reader};
+use quick_xml::{NsReader, Reader};
 use url::Url;
 
 #[cfg(test)]
@@ -32,7 +32,10 @@ impl<R: BufRead> ElementSource<R> {
     pub(crate) fn new(xml_data: R, xml_base_uri: Option<&str>) -> XmlResult<ElementSource<R>> {
         // Create the XML parser
         let mut reader = NsReader::from_reader(xml_data);
-        reader.expand_empty_elements(true).trim_markup_names_in_closing_tags(true).trim_text(false);
+        let config = reader.config_mut();
+        config.expand_empty_elements = true;
+        config.trim_markup_names_in_closing_tags = true;
+        config.trim_text(false);
 
         let state = RefCell::new(SourceState::new(reader, xml_base_uri)?);
         Ok(ElementSource { state })
@@ -151,8 +154,8 @@ impl<R: BufRead> ElementSource<R> {
 
         // Hit the end of the document
         if state.current_depth > 0 {
-            let msg = format!("documented terminated at depth {}", state.current_depth);
-            let e = quick_xml::Error::UnexpectedEof(msg);
+            // let msg = format!("documented terminated at depth {}", state.current_depth);
+            let e = quick_xml::Error::Syntax(quick_xml::errors::SyntaxError::UnclosedTag);
             Err(XmlError::Parser { e })
         } else {
             Ok(None)
@@ -346,6 +349,8 @@ pub(crate) struct Element<'a, R: BufRead> {
     source: &'a ElementSource<R>,
 }
 
+// TODO this is flagged as needless, but is required in Element... fix this
+#[allow(clippy::needless_lifetimes)]
 impl<'a, R: BufRead> Element<'a, R> {
     /// Returns the value for an attribute if it exists
     pub(crate) fn attr_value(&self, name: &str) -> Option<String> {
@@ -382,6 +387,8 @@ impl<'a, R: BufRead> Element<'a, R> {
     }
 }
 
+// TODO this is flagged as needless, but is required in Element... fix this
+#[allow(clippy::needless_lifetimes)]
 impl<'a, R: BufRead> Debug for Element<'a, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buffer = String::new();
@@ -447,6 +454,8 @@ pub(crate) struct NameValue {
 pub enum XmlError {
     Parser { e: quick_xml::Error },
     Url { e: url::ParseError },
+    Encoding { e: quick_xml::encoding::EncodingError },
+    Escape { e: quick_xml::escape::EscapeError },
 }
 
 impl fmt::Display for XmlError {
@@ -454,6 +463,8 @@ impl fmt::Display for XmlError {
         match self {
             XmlError::Parser { e } => write!(f, "Parser error: {}", e),
             XmlError::Url { e } => write!(f, "Url error: {}", e),
+            XmlError::Encoding { e } => write!(f, "Encoding error: {}", e),
+            XmlError::Escape { e } => write!(f, "Escape error: {}", e),
         }
     }
 }
@@ -469,6 +480,18 @@ impl From<quick_xml::Error> for XmlError {
 impl From<url::ParseError> for XmlError {
     fn from(e: url::ParseError) -> Self {
         XmlError::Url { e }
+    }
+}
+
+impl From<quick_xml::encoding::EncodingError> for XmlError {
+    fn from(e: quick_xml::encoding::EncodingError) -> Self {
+        XmlError::Encoding { e }
+    }
+}
+
+impl From<quick_xml::escape::EscapeError> for XmlError {
+    fn from(e: quick_xml::escape::EscapeError) -> Self {
+        XmlError::Escape { e }
     }
 }
 
@@ -521,7 +544,9 @@ impl XmlEvent {
                         Ok(decoded) => decoded,
                         Err(_) => return None,
                     };
-                    let value = escape::unescape(&decoded_value).unwrap_or_else(|_| decoded_value.clone()).to_string();
+                    let value = quick_xml::escape::unescape(&decoded_value)
+                        .unwrap_or_else(|_| decoded_value.clone())
+                        .to_string();
 
                     Some(NameValue { name: name.into(), value })
                 } else {
@@ -539,7 +564,7 @@ impl XmlEvent {
             Ok(None)
         } else {
             let escaped_text = reader.decoder().decode(text)?;
-            let unescaped_text = escape::unescape(&escaped_text).map_err(quick_xml::Error::EscapeError)?;
+            let unescaped_text = quick_xml::escape::unescape(&escaped_text)?;
 
             Ok(Some(XmlEvent::Text(unescaped_text.to_string())))
         }

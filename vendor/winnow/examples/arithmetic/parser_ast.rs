@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 
 use winnow::prelude::*;
+use winnow::Result;
 use winnow::{
     ascii::{digit1 as digits, multispace0 as multispaces},
     combinator::alt,
@@ -39,17 +40,17 @@ impl Display for Expr {
     fn fmt(&self, format: &mut Formatter<'_>) -> fmt::Result {
         use Expr::{Add, Div, Mul, Paren, Sub, Value};
         match *self {
-            Value(val) => write!(format, "{}", val),
-            Add(ref left, ref right) => write!(format, "{} + {}", left, right),
-            Sub(ref left, ref right) => write!(format, "{} - {}", left, right),
-            Mul(ref left, ref right) => write!(format, "{} * {}", left, right),
-            Div(ref left, ref right) => write!(format, "{} / {}", left, right),
-            Paren(ref expr) => write!(format, "({})", expr),
+            Value(val) => write!(format, "{val}"),
+            Add(ref left, ref right) => write!(format, "{left} + {right}"),
+            Sub(ref left, ref right) => write!(format, "{left} - {right}"),
+            Mul(ref left, ref right) => write!(format, "{left} * {right}"),
+            Div(ref left, ref right) => write!(format, "{left} / {right}"),
+            Paren(ref expr) => write!(format, "({expr})"),
         }
     }
 }
 
-pub(crate) fn expr(i: &mut &str) -> PResult<Expr> {
+pub(crate) fn expr(i: &mut &str) -> Result<Expr> {
     let init = term.parse_next(i)?;
 
     repeat(0.., (one_of(['+', '-']), term))
@@ -66,7 +67,7 @@ pub(crate) fn expr(i: &mut &str) -> PResult<Expr> {
         .parse_next(i)
 }
 
-fn term(i: &mut &str) -> PResult<Expr> {
+fn term(i: &mut &str) -> Result<Expr> {
     let init = factor.parse_next(i)?;
 
     repeat(0.., (one_of(['*', '/']), factor))
@@ -83,7 +84,7 @@ fn term(i: &mut &str) -> PResult<Expr> {
         .parse_next(i)
 }
 
-fn factor(i: &mut &str) -> PResult<Expr> {
+fn factor(i: &mut &str) -> Result<Expr> {
     delimited(
         multispaces,
         alt((digits.try_map(FromStr::from_str).map(Expr::Value), parens)),
@@ -92,7 +93,7 @@ fn factor(i: &mut &str) -> PResult<Expr> {
     .parse_next(i)
 }
 
-fn parens(i: &mut &str) -> PResult<Expr> {
+fn parens(i: &mut &str) -> Result<Expr> {
     delimited("(", expr, ")")
         .map(|e| Expr::Paren(Box::new(e)))
         .parse_next(i)

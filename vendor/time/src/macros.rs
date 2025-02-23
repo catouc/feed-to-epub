@@ -12,9 +12,9 @@
 ///     date!(2020 - W 01 - 3),
 ///     Date::from_iso_week_date(2020, 1, Wednesday)?
 /// );
-/// assert_eq!(date!(2020 - 001), Date::from_ordinal_date(2020, 1)?);
+/// assert_eq!(date!(2020-001), Date::from_ordinal_date(2020, 1)?);
 /// assert_eq!(
-///     date!(2020 - 01 - 01),
+///     date!(2020-01-01),
 ///     Date::from_calendar_date(2020, Month::January, 1)?
 /// );
 /// # Ok::<_, time::Error>(())

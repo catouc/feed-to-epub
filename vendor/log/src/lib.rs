@@ -41,6 +41,8 @@
 //! [`trace!`]: ./macro.trace.html
 //! [`println!`]: https://doc.rust-lang.org/stable/std/macro.println.html
 //!
+//! Avoid writing expressions with side-effects in log statements. They may not be evaluated.
+//!
 //! ## In libraries
 //!
 //! Libraries should link only to the `log` crate, and use the provided
@@ -133,6 +135,7 @@
 //!
 //! * Simple minimal loggers:
 //!     * [env_logger]
+//!     * [colog]
 //!     * [simple_logger]
 //!     * [simplelog]
 //!     * [pretty_env_logger]
@@ -140,9 +143,13 @@
 //!     * [flexi_logger]
 //!     * [call_logger]
 //!     * [structured-logger]
+//!     * [clang_log]
+//!     * [ftail]
 //! * Complex configurable frameworks:
 //!     * [log4rs]
+//!     * [logforth]
 //!     * [fern]
+//!     * [spdlog-rs]
 //! * Adaptors for other facilities:
 //!     * [syslog]
 //!     * [slog-stdlog]
@@ -308,6 +315,7 @@
 //! [`try_set_logger_raw`]: fn.try_set_logger_raw.html
 //! [`shutdown_logger_raw`]: fn.shutdown_logger_raw.html
 //! [env_logger]: https://docs.rs/env_logger/*/env_logger/
+//! [colog]: https://docs.rs/colog/*/colog/
 //! [simple_logger]: https://github.com/borntyping/rust-simple_logger
 //! [simplelog]: https://github.com/drakulix/simplelog.rs
 //! [pretty_env_logger]: https://docs.rs/pretty_env_logger/*/pretty_env_logger/
@@ -317,7 +325,9 @@
 //! [syslog]: https://docs.rs/syslog/*/syslog/
 //! [slog-stdlog]: https://docs.rs/slog-stdlog/*/slog_stdlog/
 //! [log4rs]: https://docs.rs/log4rs/*/log4rs/
+//! [logforth]: https://docs.rs/logforth/*/logforth/
 //! [fern]: https://docs.rs/fern/*/fern/
+//! [spdlog-rs]: https://docs.rs/spdlog-rs/*/spdlog/
 //! [systemd-journal-logger]: https://docs.rs/systemd-journal-logger/*/systemd_journal_logger/
 //! [android_log]: https://docs.rs/android_log/*/android_log/
 //! [win_dbg_logger]: https://docs.rs/win_dbg_logger/*/win_dbg_logger/
@@ -328,19 +338,56 @@
 //! [logcontrol-log]: https://docs.rs/logcontrol-log/*/logcontrol_log/
 //! [log_err]: https://docs.rs/log_err/*/log_err/
 //! [log-reload]: https://docs.rs/log-reload/*/log_reload/
+//! [clang_log]: https://docs.rs/clang_log/latest/clang_log
+//! [ftail]: https://docs.rs/ftail/latest/ftail
 
 #![doc(
     html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
     html_favicon_url = "https://www.rust-lang.org/favicon.ico",
-    html_root_url = "https://docs.rs/log/0.4.21"
+    html_root_url = "https://docs.rs/log/0.4.26"
 )]
 #![warn(missing_docs)]
 #![deny(missing_debug_implementations, unconditional_recursion)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
-// When compiled for the rustc compiler itself we want to make sure that this is
-// an unstable crate
-#![cfg_attr(rustbuild, feature(staged_api, rustc_private))]
-#![cfg_attr(rustbuild, unstable(feature = "rustc_private", issue = "27812"))]
+
+#[cfg(any(
+    all(feature = "max_level_off", feature = "max_level_error"),
+    all(feature = "max_level_off", feature = "max_level_warn"),
+    all(feature = "max_level_off", feature = "max_level_info"),
+    all(feature = "max_level_off", feature = "max_level_debug"),
+    all(feature = "max_level_off", feature = "max_level_trace"),
+    all(feature = "max_level_error", feature = "max_level_warn"),
+    all(feature = "max_level_error", feature = "max_level_info"),
+    all(feature = "max_level_error", feature = "max_level_debug"),
+    all(feature = "max_level_error", feature = "max_level_trace"),
+    all(feature = "max_level_warn", feature = "max_level_info"),
+    all(feature = "max_level_warn", feature = "max_level_debug"),
+    all(feature = "max_level_warn", feature = "max_level_trace"),
+    all(feature = "max_level_info", feature = "max_level_debug"),
+    all(feature = "max_level_info", feature = "max_level_trace"),
+    all(feature = "max_level_debug", feature = "max_level_trace"),
+))]
+compile_error!("multiple max_level_* features set");
+
+#[rustfmt::skip]
+#[cfg(any(
+    all(feature = "release_max_level_off", feature = "release_max_level_error"),
+    all(feature = "release_max_level_off", feature = "release_max_level_warn"),
+    all(feature = "release_max_level_off", feature = "release_max_level_info"),
+    all(feature = "release_max_level_off", feature = "release_max_level_debug"),
+    all(feature = "release_max_level_off", feature = "release_max_level_trace"),
+    all(feature = "release_max_level_error", feature = "release_max_level_warn"),
+    all(feature = "release_max_level_error", feature = "release_max_level_info"),
+    all(feature = "release_max_level_error", feature = "release_max_level_debug"),
+    all(feature = "release_max_level_error", feature = "release_max_level_trace"),
+    all(feature = "release_max_level_warn", feature = "release_max_level_info"),
+    all(feature = "release_max_level_warn", feature = "release_max_level_debug"),
+    all(feature = "release_max_level_warn", feature = "release_max_level_trace"),
+    all(feature = "release_max_level_info", feature = "release_max_level_debug"),
+    all(feature = "release_max_level_info", feature = "release_max_level_trace"),
+    all(feature = "release_max_level_debug", feature = "release_max_level_trace"),
+))]
+compile_error!("multiple release_max_level_* features set");
 
 #[cfg(all(not(feature = "std"), not(test)))]
 extern crate core as std;
@@ -1149,6 +1196,11 @@ pub trait Log: Sync + Send {
     fn log(&self, record: &Record);
 
     /// Flushes any buffered records.
+    ///
+    /// # For implementors
+    ///
+    /// This method isn't called automatically by the `log!` macros.
+    /// It can be called manually on shut-down to ensure any in-flight records are flushed.
     fn flush(&self);
 }
 
@@ -1234,13 +1286,13 @@ pub fn set_max_level(level: LevelFilter) {
 ///
 /// # Safety
 ///
-/// This function is only safe to call when no other level setting function is
-/// called while this function still executes.
+/// This function is only safe to call when it cannot race with any other
+/// calls to `set_max_level` or `set_max_level_racy`.
 ///
 /// This can be upheld by (for example) making sure that **there are no other
 /// threads**, and (on embedded) that **interrupts are disabled**.
 ///
-/// Is is safe to use all other logging functions while this function runs
+/// It is safe to use all other logging functions while this function runs
 /// (including all logging macros).
 ///
 /// [`set_max_level`]: fn.set_max_level.html
@@ -1357,27 +1409,22 @@ fn set_logger_inner<F>(make_logger: F) -> Result<(), SetLoggerError>
 where
     F: FnOnce() -> &'static dyn Log,
 {
-    let old_state = match STATE.compare_exchange(
+    match STATE.compare_exchange(
         UNINITIALIZED,
         INITIALIZING,
-        Ordering::SeqCst,
-        Ordering::SeqCst,
+        Ordering::Acquire,
+        Ordering::Relaxed,
     ) {
-        Ok(s) | Err(s) => s,
-    };
-    match old_state {
-        UNINITIALIZED => {
+        Ok(UNINITIALIZED) => {
             unsafe {
                 LOGGER = make_logger();
             }
-            STATE.store(INITIALIZED, Ordering::SeqCst);
+            STATE.store(INITIALIZED, Ordering::Release);
             Ok(())
         }
-        INITIALIZING => {
-            while STATE.load(Ordering::SeqCst) == INITIALIZING {
-                // TODO: replace with `hint::spin_loop` once MSRV is 1.49.0.
-                #[allow(deprecated)]
-                std::sync::atomic::spin_loop_hint();
+        Err(INITIALIZING) => {
+            while STATE.load(Ordering::Relaxed) == INITIALIZING {
+                std::hint::spin_loop();
             }
             Err(SetLoggerError(()))
         }
@@ -1394,8 +1441,8 @@ where
 ///
 /// # Safety
 ///
-/// This function is only safe to call when no other logger initialization
-/// function is called while this function still executes.
+/// This function is only safe to call when it cannot race with any other
+/// calls to `set_logger` or `set_logger_racy`.
 ///
 /// This can be upheld by (for example) making sure that **there are no other
 /// threads**, and (on embedded) that **interrupts are disabled**.
@@ -1405,10 +1452,10 @@ where
 ///
 /// [`set_logger`]: fn.set_logger.html
 pub unsafe fn set_logger_racy(logger: &'static dyn Log) -> Result<(), SetLoggerError> {
-    match STATE.load(Ordering::SeqCst) {
+    match STATE.load(Ordering::Acquire) {
         UNINITIALIZED => {
             LOGGER = logger;
-            STATE.store(INITIALIZED, Ordering::SeqCst);
+            STATE.store(INITIALIZED, Ordering::Release);
             Ok(())
         }
         INITIALIZING => {

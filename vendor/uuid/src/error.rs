@@ -30,6 +30,8 @@ pub(crate) enum ErrorKind {
     },
     /// The input was not a valid UTF8 string
     InvalidUTF8,
+    /// The UUID is nil.
+    Nil,
     /// Some other error occurred.
     Other,
 }
@@ -82,7 +84,7 @@ impl<'a> InvalidUuid<'a> {
                     group_bounds[hyphen_count] = index;
                 }
                 hyphen_count += 1;
-            } else if !matches!(byte, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F') {
+            } else if !byte.is_ascii_hexdigit() {
                 // Non-hex char
                 return Error(ErrorKind::Char {
                     character: byte as char,
@@ -158,6 +160,7 @@ impl fmt::Display for Error {
                 )
             }
             ErrorKind::InvalidUTF8 => write!(f, "non-UTF8 input"),
+            ErrorKind::Nil => write!(f, "the UUID is nil"),
             ErrorKind::Other => write!(f, "failed to parse a UUID"),
         }
     }

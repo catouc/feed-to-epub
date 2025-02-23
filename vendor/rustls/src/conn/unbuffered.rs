@@ -8,7 +8,7 @@ use std::error::Error as StdError;
 
 use super::UnbufferedConnectionCommon;
 use crate::client::ClientConnectionData;
-use crate::msgs::deframer::DeframerSliceBuffer;
+use crate::msgs::deframer::buffers::DeframerSliceBuffer;
 use crate::server::ServerConnectionData;
 use crate::Error;
 
@@ -46,6 +46,7 @@ impl<Data> UnbufferedConnectionCommon<Data> {
         execute: impl FnOnce(&'c mut Self, &'i mut [u8], T) -> ConnectionState<'c, 'i, Data>,
     ) -> UnbufferedStatus<'c, 'i, Data> {
         let mut buffer = DeframerSliceBuffer::new(incoming_tls);
+        let mut buffer_progress = self.core.hs_deframer.progress();
 
         let (discard, state) = loop {
             if let Some(value) = check(self) {
@@ -76,21 +77,27 @@ impl<Data> UnbufferedConnectionCommon<Data> {
                 );
             }
 
-            let deframer_output = match self.core.deframe(None, &mut buffer) {
-                Err(err) => {
-                    return UnbufferedStatus {
-                        discard: buffer.pending_discard(),
-                        state: Err(err),
-                    };
-                }
-                Ok(r) => r,
-            };
+            let deframer_output =
+                match self
+                    .core
+                    .deframe(None, buffer.filled_mut(), &mut buffer_progress)
+                {
+                    Err(err) => {
+                        buffer.queue_discard(buffer_progress.take_discard());
+                        return UnbufferedStatus {
+                            discard: buffer.pending_discard(),
+                            state: Err(err),
+                        };
+                    }
+                    Ok(r) => r,
+                };
 
             if let Some(msg) = deframer_output {
                 let mut state =
                     match mem::replace(&mut self.core.state, Err(Error::HandshakeNotComplete)) {
                         Ok(state) => state,
                         Err(e) => {
+                            buffer.queue_discard(buffer_progress.take_discard());
                             self.core.state = Err(e.clone());
                             return UnbufferedStatus {
                                 discard: buffer.pending_discard(),
@@ -103,6 +110,7 @@ impl<Data> UnbufferedConnectionCommon<Data> {
                     Ok(new) => state = new,
 
                     Err(e) => {
+                        buffer.queue_discard(buffer_progress.take_discard());
                         self.core.state = Err(e.clone());
                         return UnbufferedStatus {
                             discard: buffer.pending_discard(),
@@ -110,6 +118,8 @@ impl<Data> UnbufferedConnectionCommon<Data> {
                         };
                     }
                 }
+
+                buffer.queue_discard(buffer_progress.take_discard());
 
                 self.core.state = Ok(state);
             } else if self.wants_write {
@@ -121,6 +131,18 @@ impl<Data> UnbufferedConnectionCommon<Data> {
                 .core
                 .common_state
                 .has_received_close_notify
+                && !self.emitted_peer_closed_state
+            {
+                self.emitted_peer_closed_state = true;
+                break (buffer.pending_discard(), ConnectionState::PeerClosed);
+            } else if self
+                .core
+                .common_state
+                .has_received_close_notify
+                && self
+                    .core
+                    .common_state
+                    .has_sent_close_notify
             {
                 break (buffer.pending_discard(), ConnectionState::Closed);
             } else if self
@@ -175,7 +197,26 @@ pub enum ConnectionState<'c, 'i, Data> {
     /// the received data.
     ReadTraffic(ReadTraffic<'c, 'i, Data>),
 
-    /// Connection has been cleanly closed by the peer
+    /// Connection has been cleanly closed by the peer.
+    ///
+    /// This state is encountered at most once by each connection -- it is
+    /// "edge" triggered, rather than "level" triggered.
+    ///
+    /// It delimits the data received from the peer, meaning you can be sure you
+    /// have received all the data the peer sent.
+    ///
+    /// No further application data will be received from the peer, so no further
+    /// `ReadTraffic` states will be produced.
+    ///
+    /// However, it is possible to _send_ further application data via `WriteTraffic`
+    /// states, or close the connection cleanly by calling
+    /// [`WriteTraffic::queue_close_notify()`].
+    PeerClosed,
+
+    /// Connection has been cleanly closed by both us and the peer.
+    ///
+    /// This is a terminal state.  No other states will be produced for this
+    /// connection.
     Closed,
 
     /// One, or more, early (RTT-0) data records are available
@@ -235,13 +276,13 @@ impl<'c, 'i, Data> From<ReadEarlyData<'c, 'i, Data>> for ConnectionState<'c, 'i,
     }
 }
 
-impl<'c, 'i, Data> From<EncodeTlsData<'c, Data>> for ConnectionState<'c, 'i, Data> {
+impl<'c, Data> From<EncodeTlsData<'c, Data>> for ConnectionState<'c, '_, Data> {
     fn from(v: EncodeTlsData<'c, Data>) -> Self {
         Self::EncodeTlsData(v)
     }
 }
 
-impl<'c, 'i, Data> From<TransmitTlsData<'c, Data>> for ConnectionState<'c, 'i, Data> {
+impl<'c, Data> From<TransmitTlsData<'c, Data>> for ConnectionState<'c, '_, Data> {
     fn from(v: TransmitTlsData<'c, Data>) -> Self {
         Self::TransmitTlsData(v)
     }
@@ -251,6 +292,8 @@ impl<Data> fmt::Debug for ConnectionState<'_, '_, Data> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ReadTraffic(..) => f.debug_tuple("ReadTraffic").finish(),
+
+            Self::PeerClosed => write!(f, "PeerClosed"),
 
             Self::Closed => write!(f, "Closed"),
 
@@ -344,7 +387,7 @@ impl<'c, 'i, Data> ReadEarlyData<'c, 'i, Data> {
     }
 }
 
-impl<'c, 'i> ReadEarlyData<'c, 'i, ServerConnectionData> {
+impl ReadEarlyData<'_, '_, ServerConnectionData> {
     /// decrypts and returns the next available app-data record
     // TODO deprecate in favor of `Iterator` implementation, which requires in-place decryption
     pub fn next_record(&mut self) -> Option<Result<AppDataRecord<'_>, Error>> {
@@ -453,9 +496,8 @@ impl<'c, Data> EncodeTlsData<'c, Data> {
     /// Returns the number of bytes that were written into `outgoing_tls`, or an error if
     /// the provided buffer is too small. In the error case, `outgoing_tls` is not modified
     pub fn encode(&mut self, outgoing_tls: &mut [u8]) -> Result<usize, EncodeError> {
-        let chunk = match self.chunk.take() {
-            Some(chunk) => chunk,
-            None => return Err(EncodeError::AlreadyEncoded),
+        let Some(chunk) = self.chunk.take() else {
+            return Err(EncodeError::AlreadyEncoded);
         };
 
         let required_size = chunk.len();

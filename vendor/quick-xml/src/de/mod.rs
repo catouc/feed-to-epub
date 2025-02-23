@@ -19,11 +19,12 @@
 //!   - [Optional attributes and elements](#optional-attributes-and-elements)
 //!   - [Choices (`xs:choice` XML Schema type)](#choices-xschoice-xml-schema-type)
 //!   - [Sequences (`xs:all` and `xs:sequence` XML Schema types)](#sequences-xsall-and-xssequence-xml-schema-types)
+//! - [Generate Rust types from XML](#generate-rust-types-from-xml)
 //! - [Composition Rules](#composition-rules)
 //! - [Enum Representations](#enum-representations)
 //!   - [Normal enum variant](#normal-enum-variant)
 //!   - [`$text` enum variant](#text-enum-variant)
-//! - [Difference between `$text` and `$value` special names](#difference-between-text-and-value-special-names)
+//! - [`$text` and `$value` special names](#text-and-value-special-names)
 //!   - [`$text`](#text)
 //!   - [`$value`](#value)
 //!     - [Primitives and sequences of primitives](#primitives-and-sequences-of-primitives)
@@ -509,8 +510,9 @@
 //!   /// Use unit variant, if you do not care of a content.
 //!   /// You can use tuple variant if you want to parse
 //!   /// textual content as an xs:list.
-//!   /// Struct variants are not supported and will return
-//!   /// Err(Unsupported)
+//!   /// Struct variants are will pass a string to the
+//!   /// struct enum variant visitor, which typically
+//!   /// returns Err(Custom)
 //!   #[serde(rename = "$text")]
 //!   Text(String),
 //! }
@@ -613,8 +615,9 @@
 //!   /// Use unit variant, if you do not care of a content.
 //!   /// You can use tuple variant if you want to parse
 //!   /// textual content as an xs:list.
-//!   /// Struct variants are not supported and will return
-//!   /// Err(Unsupported)
+//!   /// Struct variants are will pass a string to the
+//!   /// struct enum variant visitor, which typically
+//!   /// returns Err(Custom)
 //!   #[serde(rename = "$text")]
 //!   Text(String),
 //! }
@@ -1309,6 +1312,15 @@
 //! </table>
 //!
 //!
+//! Generate Rust types from XML
+//! ============================
+//!
+//! To speed up the creation of Rust types that represent a given XML file you can
+//! use the [xml_schema_generator](https://github.com/Thomblin/xml_schema_generator).
+//! It provides a standalone binary and a Rust library that parses one or more XML files
+//! and generates a collection of structs that are compatible with quick_xml::de.
+//!
+//!
 //!
 //! Composition Rules
 //! =================
@@ -1377,9 +1389,9 @@
 //! |Kind   |Top-level and in `$value` field          |In normal field      |In `$text` field     |
 //! |-------|-----------------------------------------|---------------------|---------------------|
 //! |Unit   |`<Unit/>`                                |`<field>Unit</field>`|`Unit`               |
-//! |Newtype|`<Newtype>42</Newtype>`                  |Err(Unsupported)     |Err(Unsupported)     |
-//! |Tuple  |`<Tuple>42</Tuple><Tuple>answer</Tuple>` |Err(Unsupported)     |Err(Unsupported)     |
-//! |Struct |`<Struct><q>42</q><a>answer</a></Struct>`|Err(Unsupported)     |Err(Unsupported)     |
+//! |Newtype|`<Newtype>42</Newtype>`                  |Err(Custom) [^0]     |Err(Custom) [^0]     |
+//! |Tuple  |`<Tuple>42</Tuple><Tuple>answer</Tuple>` |Err(Custom) [^0]     |Err(Custom) [^0]     |
+//! |Struct |`<Struct><q>42</q><a>answer</a></Struct>`|Err(Custom) [^0]     |Err(Custom) [^0]     |
 //!
 //! `$text` enum variant
 //! --------------------
@@ -1387,9 +1399,13 @@
 //! |Kind   |Top-level and in `$value` field          |In normal field      |In `$text` field     |
 //! |-------|-----------------------------------------|---------------------|---------------------|
 //! |Unit   |_(empty)_                                |`<field/>`           |_(empty)_            |
-//! |Newtype|`42`                                     |Err(Unsupported) [^1]|Err(Unsupported) [^2]|
-//! |Tuple  |`42 answer`                              |Err(Unsupported) [^3]|Err(Unsupported) [^4]|
-//! |Struct |Err(Unsupported)                         |Err(Unsupported)     |Err(Unsupported)     |
+//! |Newtype|`42`                                     |Err(Custom) [^0] [^1]|Err(Custom) [^0] [^2]|
+//! |Tuple  |`42 answer`                              |Err(Custom) [^0] [^3]|Err(Custom) [^0] [^4]|
+//! |Struct |Err(Custom) [^0]                         |Err(Custom) [^0]     |Err(Custom) [^0]     |
+//!
+//! [^0]: Error is returned by the deserialized type. In case of derived implementation a `Custom`
+//!       error will be returned, but custom deserialize implementation can successfully deserialize
+//!       value from a string which will be passed to it.
 //!
 //! [^1]: If this serialize as `<field>42</field>` then it will be ambiguity during deserialization,
 //!       because it clash with `Unit` representation in normal field.
@@ -1405,8 +1421,8 @@
 //!
 //!
 //!
-//! Difference between `$text` and `$value` special names
-//! =====================================================
+//! `$text` and `$value` special names
+//! ==================================
 //!
 //! quick-xml supports two special names for fields -- `$text` and `$value`.
 //! Although they may seem the same, there is a distinction. Two different
@@ -1538,7 +1554,9 @@
 //! ### Primitives and sequences of primitives
 //!
 //! Sequences serialized to a list of elements. Note, that types that does not
-//! produce their own tag (i. e. primitives) are written as is, without delimiters:
+//! produce their own tag (i. e. primitives) will produce [`SeError::Unsupported`]
+//! if they contains more that one element, because such sequence cannot be
+//! deserialized to the same value:
 //!
 //! ```
 //! # use serde::{Deserialize, Serialize};
@@ -1552,9 +1570,8 @@
 //! }
 //!
 //! let obj = AnyName { field: vec![1, 2, 3] };
-//! let xml = to_string(&obj).unwrap();
-//! // Note, that types that does not produce their own tag are written as is!
-//! assert_eq!(xml, "<AnyName>123</AnyName>");
+//! // If this object were serialized, it would be represented as "<AnyName>123</AnyName>"
+//! to_string(&obj).unwrap_err();
 //!
 //! let object: AnyName = from_str("<AnyName>123</AnyName>").unwrap();
 //! assert_eq!(object, AnyName { field: vec![123] });
@@ -1806,6 +1823,7 @@
 //! [#497]: https://github.com/tafia/quick-xml/issues/497
 //! [`Serializer::serialize_unit_variant`]: serde::Serializer::serialize_unit_variant
 //! [`Deserializer::deserialize_enum`]: serde::Deserializer::deserialize_enum
+//! [`SeError::Unsupported`]: crate::errors::serialize::SeError::Unsupported
 //! [Tagged enums]: https://serde.rs/enum-representations.html#internally-tagged
 //! [serde#1183]: https://github.com/serde-rs/serde/issues/1183
 //! [serde#1495]: https://github.com/serde-rs/serde/issues/1495
@@ -1816,7 +1834,7 @@
 // Also, macros should be imported before using them
 use serde::serde_if_integer128;
 
-macro_rules! deserialize_type {
+macro_rules! deserialize_num {
     ($deserialize:ident => $visit:ident, $($mut:tt)?) => {
         fn $deserialize<V>($($mut)? self, visitor: V) -> Result<V::Value, DeError>
         where
@@ -1824,7 +1842,13 @@ macro_rules! deserialize_type {
         {
             // No need to unescape because valid integer representations cannot be escaped
             let text = self.read_string()?;
-            visitor.$visit(text.parse()?)
+            match text.parse() {
+                Ok(number) => visitor.$visit(number),
+                Err(_) => match text {
+                    Cow::Borrowed(t) => visitor.visit_str(t),
+                    Cow::Owned(t) => visitor.visit_string(t),
+                }
+            }
         }
     };
 }
@@ -1833,34 +1857,37 @@ macro_rules! deserialize_type {
 /// byte arrays, booleans and identifiers.
 macro_rules! deserialize_primitives {
     ($($mut:tt)?) => {
-        deserialize_type!(deserialize_i8 => visit_i8, $($mut)?);
-        deserialize_type!(deserialize_i16 => visit_i16, $($mut)?);
-        deserialize_type!(deserialize_i32 => visit_i32, $($mut)?);
-        deserialize_type!(deserialize_i64 => visit_i64, $($mut)?);
+        deserialize_num!(deserialize_i8 => visit_i8, $($mut)?);
+        deserialize_num!(deserialize_i16 => visit_i16, $($mut)?);
+        deserialize_num!(deserialize_i32 => visit_i32, $($mut)?);
+        deserialize_num!(deserialize_i64 => visit_i64, $($mut)?);
 
-        deserialize_type!(deserialize_u8 => visit_u8, $($mut)?);
-        deserialize_type!(deserialize_u16 => visit_u16, $($mut)?);
-        deserialize_type!(deserialize_u32 => visit_u32, $($mut)?);
-        deserialize_type!(deserialize_u64 => visit_u64, $($mut)?);
+        deserialize_num!(deserialize_u8 => visit_u8, $($mut)?);
+        deserialize_num!(deserialize_u16 => visit_u16, $($mut)?);
+        deserialize_num!(deserialize_u32 => visit_u32, $($mut)?);
+        deserialize_num!(deserialize_u64 => visit_u64, $($mut)?);
 
         serde_if_integer128! {
-            deserialize_type!(deserialize_i128 => visit_i128, $($mut)?);
-            deserialize_type!(deserialize_u128 => visit_u128, $($mut)?);
+            deserialize_num!(deserialize_i128 => visit_i128, $($mut)?);
+            deserialize_num!(deserialize_u128 => visit_u128, $($mut)?);
         }
 
-        deserialize_type!(deserialize_f32 => visit_f32, $($mut)?);
-        deserialize_type!(deserialize_f64 => visit_f64, $($mut)?);
+        deserialize_num!(deserialize_f32 => visit_f32, $($mut)?);
+        deserialize_num!(deserialize_f64 => visit_f64, $($mut)?);
 
         fn deserialize_bool<V>($($mut)? self, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
         {
-            let text = self.read_string()?;
-
-            str2bool(&text, visitor)
+            let text = match self.read_string()? {
+                Cow::Borrowed(s) => CowRef::Input(s),
+                Cow::Owned(s) => CowRef::Owned(s),
+            };
+            text.deserialize_bool(visitor)
         }
 
         /// Character represented as [strings](#method.deserialize_str).
+        #[inline]
         fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
@@ -1880,6 +1907,7 @@ macro_rules! deserialize_primitives {
         }
 
         /// Representation of owned strings the same as [non-owned](#method.deserialize_str).
+        #[inline]
         fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
@@ -1887,15 +1915,17 @@ macro_rules! deserialize_primitives {
             self.deserialize_str(visitor)
         }
 
-        /// Returns [`DeError::Unsupported`]
-        fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value, DeError>
+        /// Forwards deserialization to the [`deserialize_any`](#method.deserialize_any).
+        #[inline]
+        fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
         {
-            Err(DeError::Unsupported("binary data content is not supported by XML format".into()))
+            self.deserialize_any(visitor)
         }
 
         /// Forwards deserialization to the [`deserialize_bytes`](#method.deserialize_bytes).
+        #[inline]
         fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
@@ -1904,6 +1934,7 @@ macro_rules! deserialize_primitives {
         }
 
         /// Representation of the named units the same as [unnamed units](#method.deserialize_unit).
+        #[inline]
         fn deserialize_unit_struct<V>(
             self,
             _name: &'static str,
@@ -1916,6 +1947,7 @@ macro_rules! deserialize_primitives {
         }
 
         /// Representation of tuples the same as [sequences](#method.deserialize_seq).
+        #[inline]
         fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
@@ -1924,6 +1956,7 @@ macro_rules! deserialize_primitives {
         }
 
         /// Representation of named tuples the same as [unnamed tuples](#method.deserialize_tuple).
+        #[inline]
         fn deserialize_tuple_struct<V>(
             self,
             _name: &'static str,
@@ -1947,6 +1980,7 @@ macro_rules! deserialize_primitives {
         }
 
         /// Identifiers represented as [strings](#method.deserialize_str).
+        #[inline]
         fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, DeError>
         where
             V: Visitor<'de>,
@@ -1972,8 +2006,9 @@ mod simple_type;
 mod text;
 mod var;
 
+pub use self::resolver::{EntityResolver, PredefinedEntityResolver};
+pub use self::simple_type::SimpleTypeDeserializer;
 pub use crate::errors::serialize::DeError;
-pub use resolver::{EntityResolver, NoEntityResolver};
 
 use crate::{
     de::map::ElementMapAccess,
@@ -1982,8 +2017,11 @@ use crate::{
     events::{BytesCData, BytesEnd, BytesStart, BytesText, Event},
     name::QName,
     reader::Reader,
+    utils::CowRef,
 };
-use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, SeqAccess, Visitor};
+use serde::de::{
+    self, Deserialize, DeserializeOwned, DeserializeSeed, IntoDeserializer, SeqAccess, Visitor,
+};
 use std::borrow::Cow;
 #[cfg(feature = "overlapped-lists")]
 use std::collections::VecDeque;
@@ -2002,11 +2040,14 @@ pub(crate) const VALUE_KEY: &str = "$value";
 /// events. _Consequent_ means that events should follow each other or be
 /// delimited only by (any count of) [`Comment`] or [`PI`] events.
 ///
+/// Internally text is stored in `Cow<str>`. Cloning of text is cheap while it
+/// is borrowed and makes copies of data when it is owned.
+///
 /// [`Text`]: Event::Text
 /// [`CData`]: Event::CData
 /// [`Comment`]: Event::Comment
 /// [`PI`]: Event::PI
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Text<'a> {
     text: Cow<'a, str>,
 }
@@ -2029,10 +2070,26 @@ impl<'a> From<&'a str> for Text<'a> {
     }
 }
 
+impl<'a> From<String> for Text<'a> {
+    #[inline]
+    fn from(text: String) -> Self {
+        Self {
+            text: Cow::Owned(text),
+        }
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Text<'a> {
+    #[inline]
+    fn from(text: Cow<'a, str>) -> Self {
+        Self { text }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Simplified event which contains only these variants that used by deserializer
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeEvent<'a> {
     /// Start tag (with attributes) `<tag attr="value">`.
     Start(BytesStart<'a>),
@@ -2064,7 +2121,7 @@ pub enum DeEvent<'a> {
 ///
 /// [`Text`]: Event::Text
 /// [`CData`]: Event::CData
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PayloadEvent<'a> {
     /// Start tag (with attributes) `<tag attr="value">`.
     Start(BytesStart<'a>),
@@ -2098,7 +2155,7 @@ impl<'a> PayloadEvent<'a> {
 /// An intermediate reader that consumes [`PayloadEvent`]s and produces final [`DeEvent`]s.
 /// [`PayloadEvent::Text`] events, that followed by any event except
 /// [`PayloadEvent::Text`] or [`PayloadEvent::CData`], are trimmed from the end.
-struct XmlReader<'i, R: XmlRead<'i>, E: EntityResolver = NoEntityResolver> {
+struct XmlReader<'i, R: XmlRead<'i>, E: EntityResolver = PredefinedEntityResolver> {
     /// A source of low-level XML events
     reader: R,
     /// Intermediate event, that could be returned by the next call to `next()`.
@@ -2108,9 +2165,9 @@ struct XmlReader<'i, R: XmlRead<'i>, E: EntityResolver = NoEntityResolver> {
     lookahead: Result<PayloadEvent<'i>, DeError>,
 
     /// Used to resolve unknown entities that would otherwise cause the parser
-    /// to return an [`EscapeError::UnrecognizedSymbol`] error.
+    /// to return an [`EscapeError::UnrecognizedEntity`] error.
     ///
-    /// [`EscapeError::UnrecognizedSymbol`]: crate::escape::EscapeError::UnrecognizedSymbol
+    /// [`EscapeError::UnrecognizedEntity`]: crate::escape::EscapeError::UnrecognizedEntity
     entity_resolver: E,
 }
 
@@ -2128,7 +2185,7 @@ impl<'i, R: XmlRead<'i>, E: EntityResolver> XmlReader<'i, R, E> {
     }
 
     /// Returns `true` if all events was consumed
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         matches!(self.lookahead, Ok(PayloadEvent::Eof))
     }
 
@@ -2138,8 +2195,9 @@ impl<'i, R: XmlRead<'i>, E: EntityResolver> XmlReader<'i, R, E> {
         replace(&mut self.lookahead, self.reader.next())
     }
 
+    /// Returns `true` when next event is not a text event in any form.
     #[inline(always)]
-    fn need_trim_end(&self) -> bool {
+    const fn current_event_is_last_text(&self) -> bool {
         // If next event is a text or CDATA, we should not trim trailing spaces
         !matches!(
             self.lookahead,
@@ -2155,43 +2213,27 @@ impl<'i, R: XmlRead<'i>, E: EntityResolver> XmlReader<'i, R, E> {
     /// [`CData`]: PayloadEvent::CData
     fn drain_text(&mut self, mut result: Cow<'i, str>) -> Result<DeEvent<'i>, DeError> {
         loop {
-            match self.lookahead {
-                Ok(PayloadEvent::Text(_) | PayloadEvent::CData(_)) => {
-                    let text = self.next_text()?;
+            if self.current_event_is_last_text() {
+                break;
+            }
 
-                    let mut s = result.into_owned();
-                    s += &text;
-                    result = Cow::Owned(s);
+            match self.next_impl()? {
+                PayloadEvent::Text(mut e) => {
+                    if self.current_event_is_last_text() {
+                        // FIXME: Actually, we should trim after decoding text, but now we trim before
+                        e.inplace_trim_end();
+                    }
+                    result
+                        .to_mut()
+                        .push_str(&e.unescape_with(|entity| self.entity_resolver.resolve(entity))?);
                 }
-                _ => break,
+                PayloadEvent::CData(e) => result.to_mut().push_str(&e.decode()?),
+
+                // SAFETY: current_event_is_last_text checks that event is Text or CData
+                _ => unreachable!("Only `Text` and `CData` events can come here"),
             }
         }
         Ok(DeEvent::Text(Text { text: result }))
-    }
-
-    /// Read one text event, panics if current event is not a text event
-    ///
-    /// |Event                  |XML                        |Handling
-    /// |-----------------------|---------------------------|----------------------------------------
-    /// |[`PayloadEvent::Start`]|`<tag>...</tag>`           |Possible panic (unreachable)
-    /// |[`PayloadEvent::End`]  |`</any-tag>`               |Possible panic (unreachable)
-    /// |[`PayloadEvent::Text`] |`text content`             |Unescapes `text content` and returns it
-    /// |[`PayloadEvent::CData`]|`<![CDATA[cdata content]]>`|Returns `cdata content` unchanged
-    /// |[`PayloadEvent::Eof`]  |                           |Possible panic (unreachable)
-    #[inline(always)]
-    fn next_text(&mut self) -> Result<Cow<'i, str>, DeError> {
-        match self.next_impl()? {
-            PayloadEvent::Text(mut e) => {
-                if self.need_trim_end() {
-                    e.inplace_trim_end();
-                }
-                Ok(e.unescape_with(|entity| self.entity_resolver.resolve(entity))?)
-            }
-            PayloadEvent::CData(e) => Ok(e.decode()?),
-
-            // SAFETY: this method is called only when we peeked Text or CData
-            _ => unreachable!("Only `Text` and `CData` events can come here"),
-        }
     }
 
     /// Return an input-borrowing event.
@@ -2201,7 +2243,8 @@ impl<'i, R: XmlRead<'i>, E: EntityResolver> XmlReader<'i, R, E> {
                 PayloadEvent::Start(e) => Ok(DeEvent::Start(e)),
                 PayloadEvent::End(e) => Ok(DeEvent::End(e)),
                 PayloadEvent::Text(mut e) => {
-                    if self.need_trim_end() && e.inplace_trim_end() {
+                    if self.current_event_is_last_text() && e.inplace_trim_end() {
+                        // FIXME: Actually, we should trim after decoding text, but now we trim before
                         continue;
                     }
                     self.drain_text(e.unescape_with(|entity| self.entity_resolver.resolve(entity))?)
@@ -2272,7 +2315,7 @@ where
 }
 
 /// Deserialize from a reader. This method will do internal copies of data
-/// readed from `reader`. If you want have a `&str` input and want to borrow
+/// read from `reader`. If you want have a `&str` input and want to borrow
 /// as much as possible, use [`from_str`].
 pub fn from_reader<R, T>(reader: R) -> Result<T, DeError>
 where
@@ -2283,53 +2326,10 @@ where
     T::deserialize(&mut de)
 }
 
-// TODO: According to the https://www.w3.org/TR/xmlschema11-2/#boolean,
-// valid boolean representations are only "true", "false", "1", and "0"
-fn str2bool<'de, V>(value: &str, visitor: V) -> Result<V::Value, DeError>
-where
-    V: de::Visitor<'de>,
-{
-    match value {
-        "true" | "1" | "True" | "TRUE" | "t" | "Yes" | "YES" | "yes" | "y" => {
-            visitor.visit_bool(true)
-        }
-        "false" | "0" | "False" | "FALSE" | "f" | "No" | "NO" | "no" | "n" => {
-            visitor.visit_bool(false)
-        }
-        _ => Err(DeError::InvalidBoolean(value.into())),
-    }
-}
-
-fn deserialize_bool<'de, V>(value: &[u8], decoder: Decoder, visitor: V) -> Result<V::Value, DeError>
-where
-    V: Visitor<'de>,
-{
-    #[cfg(feature = "encoding")]
-    {
-        let value = decoder.decode(value)?;
-        // No need to unescape because valid boolean representations cannot be escaped
-        str2bool(value.as_ref(), visitor)
-    }
-
-    #[cfg(not(feature = "encoding"))]
-    {
-        // No need to unescape because valid boolean representations cannot be escaped
-        match value {
-            b"true" | b"1" | b"True" | b"TRUE" | b"t" | b"Yes" | b"YES" | b"yes" | b"y" => {
-                visitor.visit_bool(true)
-            }
-            b"false" | b"0" | b"False" | b"FALSE" | b"f" | b"No" | b"NO" | b"no" | b"n" => {
-                visitor.visit_bool(false)
-            }
-            e => Err(DeError::InvalidBoolean(decoder.decode(e)?.into())),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// A structure that deserializes XML into Rust values.
-pub struct Deserializer<'de, R, E: EntityResolver = NoEntityResolver>
+pub struct Deserializer<'de, R, E: EntityResolver = PredefinedEntityResolver>
 where
     R: XmlRead<'de>,
 {
@@ -2362,6 +2362,9 @@ where
 
     #[cfg(not(feature = "overlapped-lists"))]
     peek: Option<DeEvent<'de>>,
+
+    /// Buffer to store attribute name as a field name exposed to serde consumers
+    key_buf: String,
 }
 
 impl<'de, R, E> Deserializer<'de, R, E>
@@ -2388,6 +2391,8 @@ where
 
             #[cfg(not(feature = "overlapped-lists"))]
             peek: None,
+
+            key_buf: String::new(),
         }
     }
 
@@ -2402,6 +2407,38 @@ where
             return self.reader.is_empty();
         }
         false
+    }
+
+    /// Returns the underlying XML reader.
+    ///
+    /// ```
+    /// # use pretty_assertions::assert_eq;
+    /// use serde::Deserialize;
+    /// use quick_xml::de::Deserializer;
+    /// use quick_xml::Reader;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct SomeStruct {
+    ///     field1: String,
+    ///     field2: String,
+    /// }
+    ///
+    /// // Try to deserialize from broken XML
+    /// let mut de = Deserializer::from_str(
+    ///     "<SomeStruct><field1><field2></SomeStruct>"
+    /// //   0                           ^= 28        ^= 41
+    /// );
+    ///
+    /// let err = SomeStruct::deserialize(&mut de);
+    /// assert!(err.is_err());
+    ///
+    /// let reader: &Reader<_> = de.get_ref().get_ref();
+    ///
+    /// assert_eq!(reader.error_position(), 28);
+    /// assert_eq!(reader.buffer_position(), 41);
+    /// ```
+    pub const fn get_ref(&self) -> &R {
+        &self.reader.reader
     }
 
     /// Set the maximum number of events that could be skipped during deserialization
@@ -2462,7 +2499,7 @@ where
     ///
     /// [`deserialize_seq`]: serde::Deserializer::deserialize_seq
     /// [DoS]: https://en.wikipedia.org/wiki/Denial-of-service_attack
-    /// [auto-expanding feature]: Reader::expand_empty_elements
+    /// [auto-expanding feature]: crate::reader::Config::expand_empty_elements
     #[cfg(feature = "overlapped-lists")]
     pub fn event_buffer_size(&mut self, limit: Option<NonZeroUsize>) -> &mut Self {
         self.limit = limit;
@@ -2619,7 +2656,7 @@ where
     /// |Event             |XML                        |Handling
     /// |------------------|---------------------------|----------------------------------------
     /// |[`DeEvent::Start`]|`<tag>...</tag>`           |if `allow_start == true`, result determined by the second table, otherwise emits [`UnexpectedStart("tag")`](DeError::UnexpectedStart)
-    /// |[`DeEvent::End`]  |`</any-tag>`               |Emits [`UnexpectedEnd("any-tag")`](DeError::UnexpectedEnd)
+    /// |[`DeEvent::End`]  |`</any-tag>`               |This is impossible situation, the method will panic if it happens
     /// |[`DeEvent::Text`] |`text content` or `<![CDATA[cdata content]]>` (probably mixed)|Returns event content unchanged
     /// |[`DeEvent::Eof`]  |                           |Emits [`UnexpectedEof`](DeError::UnexpectedEof)
     ///
@@ -2630,7 +2667,7 @@ where
     /// |[`DeEvent::Start`]|`<any-tag>...</any-tag>`   |Emits [`UnexpectedStart("any-tag")`](DeError::UnexpectedStart)
     /// |[`DeEvent::End`]  |`</tag>`                   |Returns an empty slice. The reader guarantee that tag will match the open one
     /// |[`DeEvent::Text`] |`text content` or `<![CDATA[cdata content]]>` (probably mixed)|Returns event content unchanged, expects the `</tag>` after that
-    /// |[`DeEvent::Eof`]  |                           |Emits [`UnexpectedEof`](DeError::UnexpectedEof)
+    /// |[`DeEvent::Eof`]  |                           |Emits [`InvalidXml(IllFormed(MissingEndTag))`](DeError::InvalidXml)
     ///
     /// [`Text`]: Event::Text
     /// [`CData`]: Event::CData
@@ -2638,15 +2675,21 @@ where
         match self.next()? {
             DeEvent::Text(e) => Ok(e.text),
             // allow one nested level
-            DeEvent::Start(_) if allow_start => self.read_text(),
+            DeEvent::Start(e) if allow_start => self.read_text(e.name()),
             DeEvent::Start(e) => Err(DeError::UnexpectedStart(e.name().as_ref().to_owned())),
-            DeEvent::End(e) => Err(DeError::UnexpectedEnd(e.name().as_ref().to_owned())),
+            // SAFETY: The reader is guaranteed that we don't have unmatched tags
+            // If we here, then out deserializer has a bug
+            DeEvent::End(e) => unreachable!("{:?}", e),
             DeEvent::Eof => Err(DeError::UnexpectedEof),
         }
     }
     /// Consumes one [`DeEvent::Text`] event and ensures that it is followed by the
     /// [`DeEvent::End`] event.
-    fn read_text(&mut self) -> Result<Cow<'de, str>, DeError> {
+    ///
+    /// # Parameters
+    /// - `name`: name of a tag opened before reading text. The corresponding end tag
+    ///   should present in input just after the text
+    fn read_text(&mut self, name: QName) -> Result<Cow<'de, str>, DeError> {
         match self.next()? {
             DeEvent::Text(e) => match self.next()? {
                 // The matching tag name is guaranteed by the reader
@@ -2654,14 +2697,14 @@ where
                 // SAFETY: Cannot be two consequent Text events, they would be merged into one
                 DeEvent::Text(_) => unreachable!(),
                 DeEvent::Start(e) => Err(DeError::UnexpectedStart(e.name().as_ref().to_owned())),
-                DeEvent::Eof => Err(DeError::UnexpectedEof),
+                DeEvent::Eof => Err(Error::missed_end(name, self.reader.decoder()).into()),
             },
             // We can get End event in case of `<tag></tag>` or `<tag/>` input
             // Return empty text in that case
             // The matching tag name is guaranteed by the reader
             DeEvent::End(_) => Ok("".into()),
             DeEvent::Start(s) => Err(DeError::UnexpectedStart(s.name().as_ref().to_owned())),
-            DeEvent::Eof => Err(DeError::UnexpectedEof),
+            DeEvent::Eof => Err(Error::missed_end(name, self.reader.decoder()).into()),
         }
     }
 
@@ -2729,7 +2772,7 @@ impl<'de> Deserializer<'de, SliceReader<'de>> {
     /// Deserializer created with this method will not resolve custom entities.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(source: &'de str) -> Self {
-        Self::from_str_with_resolver(source, NoEntityResolver)
+        Self::from_str_with_resolver(source, PredefinedEntityResolver)
     }
 }
 
@@ -2741,7 +2784,8 @@ where
     /// and use specified entity resolver.
     pub fn from_str_with_resolver(source: &'de str, entity_resolver: E) -> Self {
         let mut reader = Reader::from_str(source);
-        reader.expand_empty_elements(true);
+        let config = reader.config_mut();
+        config.expand_empty_elements = true;
 
         Self::new(
             SliceReader {
@@ -2766,7 +2810,7 @@ where
     ///
     /// Deserializer created with this method will not resolve custom entities.
     pub fn from_reader(reader: R) -> Self {
-        Self::with_resolver(reader, NoEntityResolver)
+        Self::with_resolver(reader, PredefinedEntityResolver)
     }
 }
 
@@ -2783,7 +2827,8 @@ where
     /// UTF-8, you can decode it first before using [`from_str`].
     pub fn with_resolver(reader: R, entity_resolver: E) -> Self {
         let mut reader = Reader::from_reader(reader);
-        reader.expand_empty_elements(true);
+        let config = reader.config_mut();
+        config.expand_empty_elements = true;
 
         Self::new(
             IoReader {
@@ -2816,8 +2861,16 @@ where
     {
         match self.next()? {
             DeEvent::Start(e) => visitor.visit_map(ElementMapAccess::new(self, e, fields)?),
-            DeEvent::End(e) => Err(DeError::UnexpectedEnd(e.name().as_ref().to_owned())),
-            DeEvent::Text(_) => Err(DeError::ExpectedStart),
+            // SAFETY: The reader is guaranteed that we don't have unmatched tags
+            // If we here, then out deserializer has a bug
+            DeEvent::End(e) => unreachable!("{:?}", e),
+            // Deserializer methods are only hints, if deserializer could not satisfy
+            // request, it should return the data that it has. It is responsibility
+            // of a Visitor to return an error if it does not understand the data
+            DeEvent::Text(e) => match e.text {
+                Cow::Borrowed(s) => visitor.visit_borrowed_str(s),
+                Cow::Owned(s) => visitor.visit_string(s),
+            },
             DeEvent::Eof => Err(DeError::UnexpectedEof),
         }
     }
@@ -2836,7 +2889,7 @@ where
     /// |Event             |XML                        |Handling
     /// |------------------|---------------------------|-------------------------------------------
     /// |[`DeEvent::Start`]|`<tag>...</tag>`           |Calls `visitor.visit_unit()`, consumes all events up to and including corresponding `End` event
-    /// |[`DeEvent::End`]  |`</tag>`                   |Emits [`UnexpectedEnd("tag")`](DeError::UnexpectedEnd)
+    /// |[`DeEvent::End`]  |`</tag>`                   |This is impossible situation, the method will panic if it happens
     /// |[`DeEvent::Text`] |`text content` or `<![CDATA[cdata content]]>` (probably mixed)|Calls `visitor.visit_unit()`. The content is ignored
     /// |[`DeEvent::Eof`]  |                           |Emits [`UnexpectedEof`](DeError::UnexpectedEof)
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, DeError>
@@ -2849,7 +2902,9 @@ where
                 visitor.visit_unit()
             }
             DeEvent::Text(_) => visitor.visit_unit(),
-            DeEvent::End(e) => Err(DeError::UnexpectedEnd(e.name().as_ref().to_owned())),
+            // SAFETY: The reader is guaranteed that we don't have unmatched tags
+            // If we here, then out deserializer has a bug
+            DeEvent::End(e) => unreachable!("{:?}", e),
             DeEvent::Eof => Err(DeError::UnexpectedEof),
         }
     }
@@ -2937,6 +2992,19 @@ where
     }
 }
 
+impl<'de, 'a, R, E> IntoDeserializer<'de, DeError> for &'a mut Deserializer<'de, R, E>
+where
+    R: XmlRead<'de>,
+    E: EntityResolver,
+{
+    type Deserializer = Self;
+
+    #[inline]
+    fn into_deserializer(self) -> Self {
+        self
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Helper struct that contains a state for an algorithm of converting events
@@ -3015,6 +3083,41 @@ pub struct IoReader<R: BufRead> {
     buf: Vec<u8>,
 }
 
+impl<R: BufRead> IoReader<R> {
+    /// Returns the underlying XML reader.
+    ///
+    /// ```
+    /// # use pretty_assertions::assert_eq;
+    /// use serde::Deserialize;
+    /// use std::io::Cursor;
+    /// use quick_xml::de::Deserializer;
+    /// use quick_xml::Reader;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct SomeStruct {
+    ///     field1: String,
+    ///     field2: String,
+    /// }
+    ///
+    /// // Try to deserialize from broken XML
+    /// let mut de = Deserializer::from_reader(Cursor::new(
+    ///     "<SomeStruct><field1><field2></SomeStruct>"
+    /// //   0                           ^= 28        ^= 41
+    /// ));
+    ///
+    /// let err = SomeStruct::deserialize(&mut de);
+    /// assert!(err.is_err());
+    ///
+    /// let reader: &Reader<Cursor<&str>> = de.get_ref().get_ref();
+    ///
+    /// assert_eq!(reader.error_position(), 28);
+    /// assert_eq!(reader.buffer_position(), 41);
+    /// ```
+    pub const fn get_ref(&self) -> &Reader<R> {
+        &self.reader
+    }
+}
+
 impl<'i, R: BufRead> XmlRead<'i> for IoReader<R> {
     fn next(&mut self) -> Result<PayloadEvent<'static>, DeError> {
         loop {
@@ -3029,7 +3132,6 @@ impl<'i, R: BufRead> XmlRead<'i> for IoReader<R> {
 
     fn read_to_end(&mut self, name: QName) -> Result<(), DeError> {
         match self.reader.read_to_end_into(name, &mut self.buf) {
-            Err(Error::UnexpectedEof(_)) => Err(DeError::UnexpectedEof),
             Err(e) => Err(e.into()),
             Ok(_) => Ok(()),
         }
@@ -3049,6 +3151,40 @@ pub struct SliceReader<'de> {
     start_trimmer: StartTrimmer,
 }
 
+impl<'de> SliceReader<'de> {
+    /// Returns the underlying XML reader.
+    ///
+    /// ```
+    /// # use pretty_assertions::assert_eq;
+    /// use serde::Deserialize;
+    /// use quick_xml::de::Deserializer;
+    /// use quick_xml::Reader;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct SomeStruct {
+    ///     field1: String,
+    ///     field2: String,
+    /// }
+    ///
+    /// // Try to deserialize from broken XML
+    /// let mut de = Deserializer::from_str(
+    ///     "<SomeStruct><field1><field2></SomeStruct>"
+    /// //   0                           ^= 28        ^= 41
+    /// );
+    ///
+    /// let err = SomeStruct::deserialize(&mut de);
+    /// assert!(err.is_err());
+    ///
+    /// let reader: &Reader<&[u8]> = de.get_ref().get_ref();
+    ///
+    /// assert_eq!(reader.error_position(), 28);
+    /// assert_eq!(reader.buffer_position(), 41);
+    /// ```
+    pub const fn get_ref(&self) -> &Reader<&'de [u8]> {
+        &self.reader
+    }
+}
+
 impl<'de> XmlRead<'de> for SliceReader<'de> {
     fn next(&mut self) -> Result<PayloadEvent<'de>, DeError> {
         loop {
@@ -3061,7 +3197,6 @@ impl<'de> XmlRead<'de> for SliceReader<'de> {
 
     fn read_to_end(&mut self, name: QName) -> Result<(), DeError> {
         match self.reader.read_to_end(name) {
-            Err(Error::UnexpectedEof(_)) => Err(DeError::UnexpectedEof),
             Err(e) => Err(e.into()),
             Ok(_) => Ok(()),
         }
@@ -3075,6 +3210,7 @@ impl<'de> XmlRead<'de> for SliceReader<'de> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::IllFormedError;
     use pretty_assertions::assert_eq;
 
     fn make_de<'de>(source: &'de str) -> Deserializer<'de, SliceReader<'de>> {
@@ -3539,7 +3675,7 @@ mod tests {
 
             match List::deserialize(&mut de) {
                 Err(DeError::TooManyEvents(count)) => assert_eq!(count.get(), 3),
-                e => panic!("Expected `Err(TooManyEvents(3))`, but found {:?}", e),
+                e => panic!("Expected `Err(TooManyEvents(3))`, but got `{:?}`", e),
             }
         }
 
@@ -3605,8 +3741,13 @@ mod tests {
             assert_eq!(de.peek().unwrap(), &Start(BytesStart::new("tag")));
 
             match de.read_to_end(QName(b"tag")) {
-                Err(DeError::UnexpectedEof) => (),
-                x => panic!("Expected `Err(UnexpectedEof)`, but found {:?}", x),
+                Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                    assert_eq!(cause, IllFormedError::MissingEndTag("tag".into()))
+                }
+                x => panic!(
+                    "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                    x
+                ),
             }
             assert_eq!(de.next().unwrap(), Eof);
         }
@@ -3619,8 +3760,13 @@ mod tests {
             assert_eq!(de.peek().unwrap(), &Text("".into()));
 
             match de.read_to_end(QName(b"tag")) {
-                Err(DeError::UnexpectedEof) => (),
-                x => panic!("Expected `Err(UnexpectedEof)`, but found {:?}", x),
+                Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                    assert_eq!(cause, IllFormedError::MissingEndTag("tag".into()))
+                }
+                x => panic!(
+                    "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                    x
+                ),
             }
             assert_eq!(de.next().unwrap(), Eof);
         }
@@ -3670,7 +3816,8 @@ mod tests {
             start_trimmer: StartTrimmer::default(),
         };
 
-        reader.reader.expand_empty_elements(true);
+        let config = reader.reader.config_mut();
+        config.expand_empty_elements = true;
 
         let mut events = Vec::new();
 
@@ -3708,12 +3855,11 @@ mod tests {
     #[test]
     fn read_string() {
         match from_str::<String>(r#"</root>"#) {
-            Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                assert_eq!(expected, "");
-                assert_eq!(found, "root");
+            Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                assert_eq!(cause, IllFormedError::UnmatchedEndTag("root".into()));
             }
             x => panic!(
-                r#"Expected `Err(InvalidXml(EndEventMismatch("", "root")))`, but found {:?}"#,
+                "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
                 x
             ),
         }
@@ -3722,14 +3868,14 @@ mod tests {
         assert_eq!(s, "");
 
         match from_str::<String>(r#"<root></other>"#) {
-            Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                assert_eq!(expected, "root");
-                assert_eq!(found, "other");
-            }
-            x => panic!(
-                r#"Expected `Err(InvalidXml(EndEventMismatch("root", "other")))`, but found {:?}"#,
-                x
+            Err(DeError::InvalidXml(Error::IllFormed(cause))) => assert_eq!(
+                cause,
+                IllFormedError::MismatchedEndTag {
+                    expected: "root".into(),
+                    found: "other".into(),
+                }
             ),
+            x => panic!("Expected `Err(InvalidXml(IllFormed(_))`, but got `{:?}`", x),
         }
     }
 
@@ -4051,11 +4197,13 @@ mod tests {
                     assert_eq!(de.next().unwrap(), DeEvent::Start(BytesStart::new("tag")));
                     assert_eq!(de.next().unwrap(), DeEvent::End(BytesEnd::new("tag")));
                     match de.next() {
-                        Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                            assert_eq!(expected, "");
-                            assert_eq!(found, "tag2");
+                        Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                            assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag2".into()));
                         }
-                        x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag2' }})`, but got {:?}", x),
+                        x => panic!(
+                            "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                            x
+                        ),
                     }
                     assert_eq!(de.next().unwrap(), DeEvent::Eof);
                 }
@@ -4192,11 +4340,13 @@ mod tests {
         fn end() {
             let mut de = make_de("</tag>");
             match de.next() {
-                Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                    assert_eq!(expected, "");
-                    assert_eq!(found, "tag");
+                Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                    assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag".into()));
                 }
-                x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag' }})`, but got {:?}", x),
+                x => panic!(
+                    "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                    x
+                ),
             }
             assert_eq!(de.next().unwrap(), DeEvent::Eof);
         }
@@ -4269,11 +4419,13 @@ mod tests {
                 // Text is trimmed from both sides
                 assert_eq!(de.next().unwrap(), DeEvent::Text("text".into()));
                 match de.next() {
-                    Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                        assert_eq!(expected, "");
-                        assert_eq!(found, "tag");
+                    Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                        assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag".into()));
                     }
-                    x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag' }})`, but got {:?}", x),
+                    x => panic!(
+                        "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                        x
+                    ),
                 }
                 assert_eq!(de.next().unwrap(), DeEvent::Eof);
             }
@@ -4299,11 +4451,13 @@ mod tests {
                     // Text is trimmed from the start
                     assert_eq!(de.next().unwrap(), DeEvent::Text("text  cdata ".into()));
                     match de.next() {
-                        Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                            assert_eq!(expected, "");
-                            assert_eq!(found, "tag");
+                        Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                            assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag".into()));
                         }
-                        x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag' }})`, but got {:?}", x),
+                        x => panic!(
+                            "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                            x
+                        ),
                     }
                     assert_eq!(de.next().unwrap(), DeEvent::Eof);
                 }
@@ -4403,11 +4557,13 @@ mod tests {
                 let mut de = make_de("<![CDATA[ cdata ]]></tag>");
                 assert_eq!(de.next().unwrap(), DeEvent::Text(" cdata ".into()));
                 match de.next() {
-                    Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                        assert_eq!(expected, "");
-                        assert_eq!(found, "tag");
+                    Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                        assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag".into()));
                     }
-                    x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag' }})`, but got {:?}", x),
+                    x => panic!(
+                        "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                        x
+                    ),
                 }
                 assert_eq!(de.next().unwrap(), DeEvent::Eof);
             }
@@ -4431,11 +4587,13 @@ mod tests {
                     // Text is trimmed from the end
                     assert_eq!(de.next().unwrap(), DeEvent::Text(" cdata  text".into()));
                     match de.next() {
-                        Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                            assert_eq!(expected, "");
-                            assert_eq!(found, "tag");
+                        Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                            assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag".into()));
                         }
-                        x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag' }})`, but got {:?}", x),
+                        x => panic!(
+                            "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                            x
+                        ),
                     }
                     assert_eq!(de.next().unwrap(), DeEvent::Eof);
                 }
@@ -4479,11 +4637,13 @@ mod tests {
                     let mut de = make_de("<![CDATA[ cdata ]]><![CDATA[ cdata2 ]]></tag>");
                     assert_eq!(de.next().unwrap(), DeEvent::Text(" cdata  cdata2 ".into()));
                     match de.next() {
-                        Err(DeError::InvalidXml(Error::EndEventMismatch { expected, found })) => {
-                            assert_eq!(expected, "");
-                            assert_eq!(found, "tag");
+                        Err(DeError::InvalidXml(Error::IllFormed(cause))) => {
+                            assert_eq!(cause, IllFormedError::UnmatchedEndTag("tag".into()));
                         }
-                        x => panic!("Expected `InvalidXml(EndEventMismatch {{ expected = '', found = 'tag' }})`, but got {:?}", x),
+                        x => panic!(
+                            "Expected `Err(InvalidXml(IllFormed(_)))`, but got `{:?}`",
+                            x
+                        ),
                     }
                     assert_eq!(de.next().unwrap(), DeEvent::Eof);
                 }

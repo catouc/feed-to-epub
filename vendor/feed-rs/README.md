@@ -14,7 +14,17 @@ Add the dependency to your `Cargo.toml`.
 
 ```toml
 [dependencies]
-feed-rs = "2.0.0"
+feed-rs = "2.3.1"
+```
+
+To automatically sanitize parsed HTML content, use the `sanitize` feature. Note
+that fields with a media type of `text/plain` will not be sanitized, to avoid
+potential data loss and should be sanitized by the consumer of the feed if
+rendered as HTML.
+
+```toml
+[dependencies]
+feed-rs = { version = "2.2.1", features = ["sanitize"] }
 ```
 
 ## Reading
@@ -45,7 +55,7 @@ let json = r#"
 {
   "version": "https://jsonfeed.org/version/1",
   "title": "JSON Feed",
-  "description": "JSON Feed is a pragmatic syndication format for blogs, microblogs, and other time-based content.",
+  "description": "JSON Feed is a pragmatic syndication format for blogs, microblog  s, and other time-based content.",
   "home_page_url": "https://jsonfeed.org/",
   "feed_url": "https://jsonfeed.org/feed.json",
   "author": {
@@ -73,3 +83,8 @@ MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 Any contribution intentionally submitted for inclusion in the work by you, 
 shall be licensed as above, without any additional terms or conditions.
+
+## Original author
+
+This crate was originally created by Hiroki Kumamoto. I would like to pay my respects to Kumamoto-san, and say thank you for allowing me to take over the crate and its ongoing maintenance.
+ありがとう ございます!

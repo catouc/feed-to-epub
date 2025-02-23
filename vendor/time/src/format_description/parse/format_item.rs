@@ -259,7 +259,7 @@ macro_rules! component_definition {
         ) -> Result<Component, Error> {
             $(#[allow(clippy::string_lit_as_bytes)]
             if name.eq_ignore_ascii_case($parse_variant.as_bytes()) {
-                return Ok(Component::$variant($variant::with_modifiers(&modifiers, name.span)?,));
+                return Ok(Component::$variant($variant::with_modifiers(&modifiers, name.span)?));
             })*
             Err(Error {
                 _inner: unused(name.span.error("invalid component")),
@@ -521,6 +521,7 @@ modifier! {
     enum YearRepr {
         #[default]
         Full = b"full",
+        Century = b"century",
         LastTwo = b"last_two",
     }
 }

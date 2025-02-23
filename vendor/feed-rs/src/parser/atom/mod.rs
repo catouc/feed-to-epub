@@ -53,6 +53,18 @@ pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>) -> Parse
         }
     }
 
+    if parser.sanitize_content {
+        if let Some(t) = feed.description.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = feed.rights.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = feed.title.as_mut() {
+            t.sanitize()
+        }
+    }
+
     Ok(feed)
 }
 
@@ -94,6 +106,42 @@ fn handle_category<R: BufRead>(element: Element<R>) -> Option<Category> {
 fn handle_content<R: BufRead>(element: Element<R>) -> ParseFeedResult<Option<Content>> {
     // Extract the content type so we can parse the body
     let content_type = element.attr_value("type");
+
+    if let Some(src) = element.attr_value("src") {
+        // > If the "src" attribute is present, the "type" attribute SHOULD be provided and MUST be a MIME media type, rather than "text", "html", or "xhtml".
+        let mime = match &content_type {
+            Some(ct) => ct
+                .parse::<MediaTypeBuf>()
+                .map_err(|_| ParseFeedError::ParseError(ParseErrorKind::UnknownMimeType(ct.into())))?,
+            None => {
+                // According to the spec the content type only SHOULD be provided.
+                // Unfortunately `Content` has media type as required. So we treat a missing type as text/html as that is probably the most common. Not to mention that `body` will be `None` so we are just providing a content type for nothing.
+                MediaTypeBuf::new(names::TEXT, names::HTML)
+            }
+        };
+
+        if element.child_as_text().is_some() {
+            // > If the "src" attribute is present, atom:content MUST be empty.
+            // `ParseFeedError` has no appropriate error type, so use `MissingContent` which is what would have been returned before support for `src` was added.
+            return Err(ParseFeedError::ParseError(ParseErrorKind::MissingContent("non-empty atom:content with src")));
+        }
+
+        let content = Content {
+            body: None,
+            content_type: mime,
+            src: Some(Link {
+                href: src,
+                rel: None,
+                media_type: content_type,
+                href_lang: None,
+                title: None,
+                length: None,
+            }),
+            ..Default::default()
+        };
+
+        return Ok(Some(content));
+    }
 
     // from http://www.atomenabled.org/developers/syndication/#contentElement
     match content_type.as_deref() {
@@ -192,6 +240,21 @@ fn handle_entry<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRe
 
             // Nothing required for unknown elements
             _ => {}
+        }
+    }
+
+    if parser.sanitize_content {
+        if let Some(c) = entry.content.as_mut() {
+            c.sanitize()
+        }
+        if let Some(t) = entry.rights.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = entry.summary.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = entry.title.as_mut() {
+            t.sanitize()
         }
     }
 

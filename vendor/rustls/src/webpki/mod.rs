@@ -1,5 +1,3 @@
-#[cfg(feature = "std")]
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -7,6 +5,8 @@ use pki_types::CertificateRevocationListDer;
 use webpki::{CertRevocationList, OwnedCertRevocationList};
 
 use crate::error::{CertRevocationListError, CertificateError, Error, OtherError};
+#[cfg(feature = "std")]
+use crate::sync::Arc;
 
 mod anchors;
 mod client_verifier;
@@ -21,7 +21,10 @@ pub use server_verifier::{ServerCertVerifierBuilder, WebPkiServerVerifier};
 pub use verify::{
     verify_server_cert_signed_by_trust_anchor, verify_server_name, ParsedCertificate,
 };
-pub use verify::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
+pub use verify::{
+    verify_tls12_signature, verify_tls13_signature, verify_tls13_signature_with_raw_key,
+    WebPkiSupportedAlgorithms,
+};
 
 /// An error that can occur when building a certificate verifier.
 #[derive(Debug, Clone)]

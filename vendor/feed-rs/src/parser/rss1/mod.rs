@@ -53,6 +53,18 @@ fn handle_channel<R: BufRead>(parser: &Parser, feed: &mut Feed, channel: Element
         }
     }
 
+    if parser.sanitize_content {
+        if let Some(t) = feed.description.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = feed.rights.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = feed.title.as_mut() {
+            t.sanitize()
+        }
+    }
+
     Ok(())
 }
 
@@ -124,6 +136,21 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
                 length: None,
                 src: ce.src.map(|s| Link::new(s, element.xml_base.as_ref())),
             });
+        }
+    }
+
+    if parser.sanitize_content {
+        if let Some(c) = entry.content.as_mut() {
+            c.sanitize()
+        }
+        if let Some(t) = entry.rights.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = entry.summary.as_mut() {
+            t.sanitize()
+        }
+        if let Some(t) = entry.title.as_mut() {
+            t.sanitize()
         }
     }
 

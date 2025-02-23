@@ -2,11 +2,12 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use mediatype::{names, MediaTypeBuf};
+use serde::Serialize;
 use url::Url;
 
+use crate::parser::util;
 #[cfg(test)]
 use crate::parser::util::parse_timestamp_lenient;
-use crate::parser::util::parse_uri;
 
 /// Combined model for a syndication feed (i.e. RSS1, RSS 2, Atom, JSON Feed)
 ///
@@ -31,7 +32,7 @@ use crate::parser::util::parse_uri;
 ///     * item - comments (link to comments on the article), source (pointer to the channel, but our data model links items to a channel)
 ///   * RSS 1:
 ///     * channel - rdf:about attribute (pointer to feed), textinput (text box e.g. for search)
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Feed {
     /// Type of this feed (e.g. RSS2, Atom etc)
     pub feed_type: FeedType,
@@ -53,7 +54,7 @@ pub struct Feed {
     /// JSON Feed: specifies the feed author.
     pub authors: Vec<Person>,
     /// Description of the feed
-    /// * Atom (optional): Contains a human-readable description or subtitle for the feed (from <subtitle>).
+    /// * Atom (optional): Contains a human-readable description or subtitle for the feed (from the subtitle element).
     /// * RSS 1 + 2 (required): Phrase or sentence describing the channel.
     /// * JSON Feed: description of the feed
     pub description: Option<Text>,
@@ -219,7 +220,7 @@ impl Feed {
 }
 
 /// Type of a feed (RSS, Atom etc)
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum FeedType {
     Atom,
     JSON,
@@ -229,7 +230,7 @@ pub enum FeedType {
 }
 
 /// An item within a feed
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Entry {
     /// A unique identifier for this item with a feed. If not supplied it is initialised to a hash of the first link or a UUID if not available.
     /// * Atom (required): Identifies the entry using a universally unique and permanent URI.
@@ -244,7 +245,7 @@ pub struct Entry {
     pub title: Option<Text>,
     /// Time at which this item was last modified. If not provided in the source, or invalid, it is `None`.
     /// * Atom (required): Indicates the last time the entry was modified in a significant way.
-    /// * RSS doesn't specify this field.
+    /// * RSS doesn't specify this field, so we copy it from the entry 'published' field for consistency.
     /// * JSON Feed: the last modification date of this item
     pub updated: Option<DateTime<Utc>>,
 
@@ -290,10 +291,11 @@ pub struct Entry {
     /// Atom (optional): Conveys information about rights, e.g. copyrights, held in and over the feed.
     pub rights: Option<Text>,
 
-    /// Extension for MediaRSS - https://www.rssboard.org/media-rss
+    /// Extension for MediaRSS - <https://www.rssboard.org/media-rss>
     /// A MediaObject will be created in two cases:
     /// 1) each "media:group" element encountered in the feed
     /// 2) a default for any other "media:*" elements found at the item level
+    ///
     /// See the Atom tests for youtube and newscred for examples
     pub media: Vec<MediaObject>,
 
@@ -408,7 +410,7 @@ impl Entry {
 ///
 /// [Atom spec]: http://www.atomenabled.org/developers/syndication/#category
 /// [RSS 2 spec]: https://validator.w3.org/feed/docs/rss2.html#ltcategorygtSubelementOfLtitemgt
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Category {
     /// The category as a human readable string
     /// * Atom (required): Identifies the category.
@@ -419,7 +421,7 @@ pub struct Category {
     pub scheme: Option<String>,
     /// Atom (optional): Provides a human-readable label for display.
     pub label: Option<String>,
-    /// Sub-categories (typically from the iTunes namespace i.e. https://help.apple.com/itc/podcasts_connect/#/itcb54353390)
+    /// Sub-categories (typically from the iTunes namespace i.e. <https://help.apple.com/itc/podcasts_connect/#/itcb54353390>)
     pub subcategories: Vec<Category>,
 }
 
@@ -451,7 +453,7 @@ impl Category {
 ///
 /// [Atom spec]: http://www.atomenabled.org/developers/syndication/#contentElement
 /// [RSS 2.0]: https://validator.w3.org/feed/docs/rss2.html#ltenclosuregtSubelementOfLtitemgt
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Content {
     /// Atom
     /// * If the type attribute ends in +xml or /xml, then an xml document of this type is contained inline.
@@ -477,6 +479,24 @@ impl Default for Content {
             content_type: MediaTypeBuf::new(names::TEXT, names::PLAIN),
             length: None,
             src: None,
+        }
+    }
+}
+
+impl Content {
+    pub fn sanitize(&mut self) {
+        // We're dealing with a broader variety of possible content types than
+        // in Text, since the possibility exists that we'll be dealing with a base64-encode
+        // image or the like, so we'll target a correspondingly tighter set: text/html
+        // and application/xhtml+xml.
+        #[cfg(feature = "sanitize")]
+        {
+            let content_type = self.content_type.as_str();
+            if content_type == "text/html" || content_type == "application/xhtml+xml" {
+                if let Some(body) = &self.body {
+                    self.body = Some(ammonia::clean(body.as_str()));
+                }
+            }
         }
     }
 }
@@ -507,7 +527,7 @@ impl Content {
 /// Information on the tools used to generate the feed
 ///
 /// Atom: Identifies the software used to generate the feed, for debugging and other purposes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Generator {
     /// Atom: Additional data
     /// RSS 2: A string indicating the program used to generate the channel.
@@ -546,7 +566,7 @@ impl Generator {
 /// [Atom spec]:  http://www.atomenabled.org/developers/syndication/#optionalFeedElements
 /// [RSS 2 spec]: https://validator.w3.org/feed/docs/rss2.html#ltimagegtSubelementOfLtchannelgt
 /// [RSS 1 spec]: https://validator.w3.org/feed/docs/rss1.html#s5.4
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Image {
     /// Link to the image
     /// * Atom: The URL to an image or logo
@@ -609,8 +629,7 @@ impl Image {
 /// Represents a link to an associated resource for the feed or entry.
 ///
 /// [Atom spec]: http://www.atomenabled.org/developers/syndication/#link
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Link {
     /// Link to additional content
     /// * Atom: The URI of the referenced resource (typically a Web page).
@@ -631,7 +650,7 @@ pub struct Link {
 
 impl Link {
     pub(crate) fn new<S: AsRef<str>>(href: S, base: Option<&Url>) -> Link {
-        let href = match parse_uri(href.as_ref(), base) {
+        let href = match util::parse_uri(href.as_ref(), base) {
             Some(uri) => uri.to_string(),
             None => href.as_ref().to_string(),
         }
@@ -679,7 +698,7 @@ impl Link {
 
 /// The top-level representation of a media object
 /// i.e. combines "media:*" elements from the RSS Media spec such as those under a media:group
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct MediaObject {
     /// Title of the object (from the media:title element)
     pub title: Option<Text>,
@@ -750,7 +769,7 @@ impl MediaObject {
 }
 
 /// Represents a "media:community" item from the RSS Media spec
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MediaCommunity {
     /// Star rating
     pub stars_avg: Option<f64>,
@@ -794,7 +813,7 @@ impl MediaCommunity {
 }
 
 /// Represents a "media:content" item from the RSS Media spec
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MediaContent {
     /// The direct URL
     pub url: Option<Url>,
@@ -859,7 +878,7 @@ impl MediaContent {
 }
 
 /// Represents a "media:credit" item from the RSS Media spec
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MediaCredit {
     /// The entity being credited
     pub entity: String,
@@ -872,7 +891,7 @@ impl MediaCredit {
 }
 
 /// Rating of the feed, item or media within the content
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MediaRating {
     // The scheme (defaults to "simple" per the spec)
     pub urn: String,
@@ -892,7 +911,7 @@ impl MediaRating {
 }
 
 /// Represents a "media:text" item from the RSS Media spec
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MediaText {
     /// The text
     pub text: Text,
@@ -913,7 +932,7 @@ impl MediaText {
 }
 
 /// Represents a "media:thumbnail" item from the RSS Media spec
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MediaThumbnail {
     /// The thumbnail image
     pub image: Image,
@@ -930,7 +949,7 @@ impl MediaThumbnail {
 /// Represents an author, contributor etc.
 ///
 /// [Atom spec]: http://www.atomenabled.org/developers/syndication/#person
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Person {
     /// Atom: human-readable name for the person.
     /// JSON Feed: human-readable name for the person.
@@ -966,7 +985,7 @@ impl Person {
 }
 
 /// Textual content, or link to the content, for a given entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Text {
     pub content_type: MediaTypeBuf,
     pub src: Option<String>,
@@ -987,6 +1006,15 @@ impl Text {
             content_type: MediaTypeBuf::new(names::TEXT, names::HTML),
             src: None,
             content: content.trim().to_string(),
+        }
+    }
+
+    pub fn sanitize(&mut self) {
+        #[cfg(feature = "sanitize")]
+        {
+            if self.content_type.as_str() != "text/plain" {
+                self.content = ammonia::clean(&self.content);
+            }
         }
     }
 }
