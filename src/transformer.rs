@@ -25,6 +25,10 @@ pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model
         .add_metadata_opf(MetadataOpf{
             name: "calibre:series".into(),
             content: feed_name.into(),
+        })
+        .add_metadata_opf(MetadataOpf{
+            name: "calibre:series_index".into(),
+            content: "100000".into(),
         });
 
     if let Some(published_date) = &entry.published {
