@@ -45,7 +45,12 @@ pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model
     }
 
     let _ = &entry.authors.iter().map(|author| {
-        epub_builder.add_author(&author.name);
+        epub_builder
+            .add_metadata_opf(MetadataOpf{
+                name: "dc:creator".into(),
+                content: author.name.clone(),
+            })
+            .add_author(&author.name);
     });
 
     // TODO: Not sure I enjoy unpacking the title twice...
