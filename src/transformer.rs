@@ -15,7 +15,7 @@ pub enum Error {
     TitleExtractionError,
 }
 
-pub fn entry_to_epub(download_dir: &str, feed_name: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
+pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
     let html = extract_html_string_from_entry(entry)?;
     let xhtml = html_string_to_xhtml_epub_string(&html);
 

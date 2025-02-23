@@ -15,7 +15,7 @@
     {
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
         pname = "feed-to-epub";
-        version = "0.5.0";
+        version = "0.6.0";
         useFetchCargoVendor = true;
         cargoLock.lockFile = ./Cargo.lock;
 
@@ -49,12 +49,6 @@
             description = "The directory for the DB to run";
           };
 
-          downloadDir = lib.mkOption {
-            type = lib.types.str;
-            default = "/var/feed-to-epub/downloads";
-            description = "The location of the working directory, not created by the binary.";
-          };
-
           user = lib.mkOption {
             type = lib.types.str;
             default = "feed-to-epub";
@@ -82,7 +76,7 @@
           systemd.services.feed-to-epub = {
             serviceConfig = {
               Type = "simple";
-              ExecStart = "${pkgs.feed-to-epub}/bin/feed-to-epub --config /etc/feed-to-epub/config.toml --download-dir ${cfg.downloadDir}";
+              ExecStart = "${pkgs.feed-to-epub}/bin/feed-to-epub --config /etc/feed-to-epub/config.toml";
               User = cfg.user;
               WorkingDirectory = cfg.workingDir;
             };

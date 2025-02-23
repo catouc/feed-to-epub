@@ -23,6 +23,7 @@ pub struct Config {
 #[derive(Deserialize)]
 pub struct Feed {
     pub url: String,
+    pub download_dir: String,
 }
 
 fn default_poll_interval_secs() -> u64 {

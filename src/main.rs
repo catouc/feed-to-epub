@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use expanduser::expanduser;
 use rusqlite::Connection;
-use std::{thread, time::Duration, path::PathBuf};
+use std::{thread, fs, time::Duration, path::PathBuf};
 
 pub mod config;
 pub mod feed_reader;
@@ -17,8 +17,6 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct Args {
     #[arg(short, long, default_value="~/.config/rss-to-epub/config.toml")]
     config: String,
-    #[arg(short, long, default_value="/var/feed-to-epub")]
-    download_dir: String,
 }
 
 fn main() -> Result<()> {
@@ -42,13 +40,18 @@ fn main() -> Result<()> {
     )?;
 
     loop {
-        for feed in config.feeds.iter() {
-            let url = url::Url::parse(&feed.1.url).expect("found invalid URL in configuration");
+        for (feed_name, feed) in config.feeds.iter() {
+            match fs::create_dir_all(&feed.download_dir) {
+                Ok(_) => (),
+                Err(err) => eprintln!("failed to create download dir {} for feed {}: {}", &feed.download_dir, feed_name, err)
+            };
+
+            let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
             let feed_data = fetch_feed(&conn, &agent, &url).unwrap();
 
             if let Some(feed_data) = feed_data {
                 feed_data.entries.iter().for_each(|entry| {
-                     match transformer::entry_to_epub(&args.download_dir, feed.0, &entry) {
+                     match transformer::entry_to_epub(feed_name, &feed.download_dir, &entry) {
                         Ok(..) => (),
                         Err(err) => println!("failed to create epub: {}", err)
                     }
@@ -59,3 +62,4 @@ fn main() -> Result<()> {
         thread::sleep(Duration::from_secs(config.poll_interval_secs))
     }
 }
+
