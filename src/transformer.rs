@@ -28,9 +28,16 @@ pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Resul
     }
 
     if let Some(summary) = &entry.summary {
-        epub_builder
-            .metadata("description", &summary.content)
-            .unwrap();
+        // This will definitely be somewhat arbitrary with unicode
+        // but we just want to avoid some feeds that stuff their
+        // entire content into the summary field from polluting
+        // the description fied.
+        const MAX_SUMMARY_LENGTH_BYTES: usize = 1000;
+        if summary.content.len() < MAX_SUMMARY_LENGTH_BYTES {
+            epub_builder
+                .metadata("description", &summary.content)
+                .unwrap();
+        };
     }
 
     let _ = &entry.authors.iter().map(|author| {
