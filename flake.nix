@@ -55,6 +55,12 @@
             description = "Name of the user and group that are used for the service";
           };
 
+          group = lib.mkOption {
+            type = lib.types.str;
+            default = "feed-to-epub";
+            description = "Name of the group to use for the systemd unit";
+          };
+
           settings = lib.mkOption {
             type = lib.types.attrs;
             default = {};
@@ -63,10 +69,10 @@
         };
 
         config = lib.mkIf cfg.enable {
-          users.groups."${cfg.user}" = {};
+          users.groups."${cfg.group}" = {};
           users.users."${cfg.user}" = {
             isSystemUser = true;
-            group = cfg.user;
+            group = cfg.group;
           };
 
           environment.etc."/feed-to-epub/config.toml" = {
@@ -78,6 +84,7 @@
               Type = "simple";
               ExecStart = "${pkgs.feed-to-epub}/bin/feed-to-epub --config /etc/feed-to-epub/config.toml";
               User = cfg.user;
+              Group = cfg.group;
               WorkingDirectory = cfg.workingDir;
             };
           };
