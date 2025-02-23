@@ -42,16 +42,18 @@ fn main() -> Result<()> {
     )?;
 
     loop {
-        config.feeds.iter()
-            .filter_map(|feed| url::Url::parse(&feed.1.url).ok())
-            .filter_map(|feed_request| fetch_feed(&conn, &agent, &feed_request).ok())
-            .flat_map(|feed| feed.entries)
-            .for_each(|entry| {
-                match transformer::entry_to_epub(&args.download_dir, &entry) {
+        for feed in config.feeds.iter() {
+            let url = url::Url::parse(&feed.1.url).expect("found invalid URL in configuration");
+            let feed_data = fetch_feed(&conn, &agent, &url).unwrap();
+
+            feed_data.entries.iter().for_each(|entry| {
+                 match transformer::entry_to_epub(&args.download_dir, feed.0, &entry) {
                     Ok(..) => (),
                     Err(err) => println!("failed to create epub: {}", err)
                 }
             });
+        }
+
         thread::sleep(Duration::from_secs(config.poll_interval_secs))
     }
 }

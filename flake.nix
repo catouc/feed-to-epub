@@ -15,7 +15,7 @@
     {
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
         pname = "feed-to-epub";
-        version = "0.4.0";
+        version = "0.5.0";
         useFetchCargoVendor = true;
         cargoLock.lockFile = ./Cargo.lock;
 

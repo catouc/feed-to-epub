@@ -1,4 +1,4 @@
-use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
+use epub_builder::{EpubBuilder, EpubContent, MetadataOpf, ZipLibrary};
 use std::fs::File;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -15,13 +15,17 @@ pub enum Error {
     TitleExtractionError,
 }
 
-pub fn entry_to_epub(download_dir: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
+pub fn entry_to_epub(download_dir: &str, feed_name: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
     let html = extract_html_string_from_entry(entry)?;
     let xhtml = html_string_to_xhtml_epub_string(&html);
 
     let mut epub_builder= EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
     epub_builder
-        .metadata("generator", "feed-to-epub").unwrap();
+        .metadata("generator", "feed-to-epub").unwrap()
+        .add_metadata_opf(MetadataOpf{
+            name: "calibre:series".into(),
+            content: feed_name.into(),
+        });
 
     if let Some(published_date) = &entry.published {
         epub_builder.set_publication_date(*published_date);
