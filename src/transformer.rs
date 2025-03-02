@@ -15,14 +15,19 @@ pub enum Error {
     TitleExtractionError,
 }
 
-pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model::Entry) -> Result<(), Error> {
+pub fn entry_to_epub(
+    feed_name: &str,
+    download_dir: &str,
+    entry: &feed_rs::model::Entry,
+) -> Result<(), Error> {
     let html = extract_html_string_from_entry(entry)?;
     let xhtml = html_string_to_xhtml_epub_string(&html);
 
-    let mut epub_builder= EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
+    let mut epub_builder = EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
     epub_builder
-        .metadata("generator", "feed-to-epub").unwrap()
-        .add_metadata_opf(MetadataOpf{
+        .metadata("generator", "feed-to-epub")
+        .unwrap()
+        .add_metadata_opf(MetadataOpf {
             name: "calibre:series".into(),
             content: feed_name.into(),
         });
@@ -31,7 +36,7 @@ pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model
         epub_builder.set_publication_date(*published_date);
     }
 
-    if let Some(summary)= &entry.summary {
+    if let Some(summary) = &entry.summary {
         // This will definitely be somewhat arbitrary with unicode
         // but we just want to avoid some feeds that stuff their
         // entire content into the summary field from polluting
@@ -46,7 +51,7 @@ pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model
 
     let _ = &entry.authors.iter().map(|author| {
         epub_builder
-            .add_metadata_opf(MetadataOpf{
+            .add_metadata_opf(MetadataOpf {
                 name: "dc:creator".into(),
                 content: author.name.clone(),
             })
@@ -62,28 +67,25 @@ pub fn entry_to_epub(feed_name: &str, download_dir: &str, entry: &feed_rs::model
     // unpacking since I have to some weird dances.
     let epub_file = match &entry.title {
         Some(title) => {
-            let file_name = entry_title_to_file_name(
-                download_dir,
-                &title.content.replace('/', "_"),
-            );
+            let file_name =
+                entry_title_to_file_name(download_dir, &title.content.replace('/', "_"));
             File::create(file_name)?
         }
-        None => return Err(Error::TitleExtractionError)
+        None => return Err(Error::TitleExtractionError),
     };
 
     match &entry.title {
         Some(title) => {
             let _ = &epub_builder
-                .metadata("title", &title.content).unwrap()
+                .metadata("title", &title.content)
+                .unwrap()
                 .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))
                 .unwrap();
         }
-        None => return Err(Error::TitleExtractionError)
+        None => return Err(Error::TitleExtractionError),
     }
 
-    epub_builder
-        .generate(epub_file)
-        .unwrap();
+    epub_builder.generate(epub_file).unwrap();
     Ok(())
 }
 
@@ -109,7 +111,8 @@ fn extract_html_string_from_entry(entry: &feed_rs::model::Entry) -> Result<Strin
 
 fn html_string_to_xhtml_epub_string(html: &str) -> String {
     let mut xhtml: String = "".into();
-    xhtml.push_str(r#"<?xml version="1.0" encoding="UTF-8" ?>
+    xhtml.push_str(
+        r#"<?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
   <head>
@@ -118,9 +121,12 @@ fn html_string_to_xhtml_epub_string(html: &str) -> String {
     <link rel="stylesheet" href="css/main.css" type="text/css" />
   </head>
   <body>
-"#);
+"#,
+    );
     xhtml.push_str(html);
-    xhtml.push_str(r#"  </body>
-</html>"#);
+    xhtml.push_str(
+        r#"  </body>
+</html>"#,
+    );
     xhtml
 }

@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use expanduser::expanduser;
 use rusqlite::Connection;
-use std::{thread, fs, time::Duration, path::PathBuf};
+use std::{fs, path::PathBuf, thread, time::Duration};
 
 pub mod config;
 pub mod feed_reader;
@@ -16,19 +16,20 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
 struct Args {
-    #[arg(short, long, default_value="~/.config/rss-to-epub/config.toml")]
+    #[arg(short, long, default_value = "~/.config/rss-to-epub/config.toml")]
     config: String,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let config_path = PathBuf::from(expanduser(&args.config)?);
+    let config_path = expanduser(&args.config)?;
     let config = Config::try_from(config_path).expect("failed to load configuration");
 
     let agent = ureq::AgentBuilder::new()
         .user_agent(&format!(
-                "feed-to-epub {}; +https:/github.com/catouc/feed-to-epub",
-                VERSION))
+            "feed-to-epub {}; +https:/github.com/catouc/feed-to-epub",
+            VERSION
+        ))
         .build();
 
     let conn = Connection::open("feed-to-rss.db")?;
@@ -55,15 +56,14 @@ fn main() -> Result<()> {
                 }
             };
 
-            let url = url::Url::parse(&feed.url)
-                .expect("found invalid URL in configuration");
+            let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
             let feed_data = fetch_feed(&conn, &agent, &url).unwrap();
 
             if let Some(feed_data) = feed_data {
                 feed_data.entries.iter().for_each(|entry| {
-                     match entry_to_epub(feed_name, &feed.download_dir, &entry) {
+                    match entry_to_epub(feed_name, &feed.download_dir, entry) {
                         Ok(..) => (),
-                        Err(err) => println!("failed to create epub: {}", err)
+                        Err(err) => println!("failed to create epub: {}", err),
                     }
                 });
             }
@@ -72,4 +72,3 @@ fn main() -> Result<()> {
         thread::sleep(Duration::from_secs(config.poll_interval_secs))
     }
 }
-

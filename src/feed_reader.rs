@@ -1,11 +1,11 @@
 use feed_rs::model::Feed;
 use feed_rs::parser;
+use jiff::tz::TimeZone;
+use jiff::Timestamp;
 use rusqlite::Connection;
 use thiserror::Error;
-use url::Url;
 use ureq::Agent;
-use jiff::Timestamp;
-use jiff::tz::TimeZone;
+use url::Url;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -33,9 +33,7 @@ fn get_feed_last_fetched(conn: &Connection, feed_url: &Url) -> Result<Timestamp,
         .prepare("SELECT last_modified FROM feeds WHERE feed_url = ?;")
         .expect("last fetched sql query wrong");
 
-    let last_fetched: String = statement.query_row(
-        [feed_url.to_string()], |r| r.get(0)
-    )?;
+    let last_fetched: String = statement.query_row([feed_url.to_string()], |r| r.get(0))?;
     let last_fetched_ts: Timestamp = last_fetched.parse()?;
     Ok(last_fetched_ts)
 }
@@ -47,14 +45,15 @@ pub fn fetch_feed(conn: &Connection, agent: &Agent, url: &Url) -> Result<Option<
         let time_diff = Timestamp::now() - last_fetched;
         if time_diff.get_hours() < 2 {
             eprintln!("{feed_url} was already fetched within the last two hours.");
-            return Ok(None)
+            return Ok(None);
         };
     }
 
     let resp = match get_feed_last_modified(conn, url) {
         Ok(last_modified) => agent
             .get(&feed_url)
-            .set("If-Modified-Since", &last_modified).call()?,
+            .set("If-Modified-Since", &last_modified)
+            .call()?,
         // yes this needs to be better, basically I need to, I think return a
         // Result<Option<String>, Err> from the get_feed_last_modified func
         Err(..) => agent.get(&feed_url).call()?,
@@ -92,4 +91,3 @@ pub fn fetch_feed(conn: &Connection, agent: &Agent, url: &Url) -> Result<Option<
         Ok(Some(feed))
     }
 }
-

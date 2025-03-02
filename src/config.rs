@@ -10,7 +10,7 @@ pub enum Error {
     #[error("database query failed")]
     FileError(#[from] std::io::Error),
     #[error("behave, the poll interval cannot be set below 1h")]
-    PollIntervalTooFastError
+    PollIntervalTooFastError,
 }
 
 #[derive(Deserialize)]
@@ -38,7 +38,7 @@ impl TryFrom<PathBuf> for Config {
         let config: Config = toml::from_str(&f)?;
 
         if config.poll_interval_secs < 3600 {
-            return Err(Error::PollIntervalTooFastError) 
+            return Err(Error::PollIntervalTooFastError);
         }
 
         Ok(config)
