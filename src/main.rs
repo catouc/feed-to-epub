@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::feed_reader::fetch_feed;
+use crate::transformer::entry_to_epub;
 use anyhow::Result;
 use clap::Parser;
 use expanduser::expanduser;
@@ -25,7 +26,9 @@ fn main() -> Result<()> {
     let config = Config::try_from(config_path).expect("failed to load configuration");
 
     let agent = ureq::AgentBuilder::new()
-        .user_agent(&format!("feed-to-epub {}; +https:/github.com/catouc/feed-to-epub", VERSION))
+        .user_agent(&format!(
+                "feed-to-epub {}; +https:/github.com/catouc/feed-to-epub",
+                VERSION))
         .build();
 
     let conn = Connection::open("feed-to-rss.db")?;
@@ -34,6 +37,7 @@ fn main() -> Result<()> {
             id INTEGER PRIMARY KEY,
             feed_url TEXT NOT NULL,
             last_modified TEXT,
+            last_fetched TEXT,
             etag TEXT
         )",
         (),
@@ -43,15 +47,21 @@ fn main() -> Result<()> {
         for (feed_name, feed) in config.feeds.iter() {
             match fs::create_dir_all(&feed.download_dir) {
                 Ok(_) => (),
-                Err(err) => eprintln!("failed to create download dir {} for feed {}: {}", &feed.download_dir, feed_name, err)
+                Err(err) => {
+                    eprintln!(
+                        "failed to create download dir {} for feed {}: {}",
+                        &feed.download_dir, feed_name, err,
+                    )
+                }
             };
 
-            let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
+            let url = url::Url::parse(&feed.url)
+                .expect("found invalid URL in configuration");
             let feed_data = fetch_feed(&conn, &agent, &url).unwrap();
 
             if let Some(feed_data) = feed_data {
                 feed_data.entries.iter().for_each(|entry| {
-                     match transformer::entry_to_epub(feed_name, &feed.download_dir, &entry) {
+                     match entry_to_epub(feed_name, &feed.download_dir, &entry) {
                         Ok(..) => (),
                         Err(err) => println!("failed to create epub: {}", err)
                     }
