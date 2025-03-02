@@ -1,12 +1,12 @@
 [package]
 name = "feed-to-epub"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.96"
 clap = { version = "4.5.9", features = ["derive"] }
 epub-builder = "0.8.0"
 expanduser = "1.2.2"

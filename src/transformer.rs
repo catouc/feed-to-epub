@@ -5,7 +5,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("could not create file")]
+    #[error("could not create file.\nError: {0}")]
     FileCreationError(#[from] std::io::Error),
     #[error("could not get bytes from HTML content")]
     BodyExtractionError,
