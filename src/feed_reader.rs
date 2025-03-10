@@ -30,7 +30,7 @@ fn get_feed_last_modified(conn: &Connection, feed_url: &Url) -> Result<String, E
 
 fn get_feed_last_fetched(conn: &Connection, feed_url: &Url) -> Result<Timestamp, Error> {
     let mut statement = conn
-        .prepare("SELECT last_modified FROM feeds WHERE feed_url = ?;")
+        .prepare("SELECT last_fetched FROM feeds WHERE feed_url = ?;")
         .expect("last fetched sql query wrong");
 
     let last_fetched: String = statement.query_row([feed_url.to_string()], |r| r.get(0))?;
@@ -45,11 +45,14 @@ pub fn fetch_feed(conn: &Connection, agent: &Agent, url: &Url) -> Result<Option<
         let time_diff = Timestamp::now()
             .to_zoned(TimeZone::UTC)
             .duration_since(&last_fetched.to_zoned(TimeZone::UTC));
-        eprintln!("{feed_url} was last fetched {time_diff} ago");
+
+        println!("{feed_url} was last fetched {time_diff} ago");
         if time_diff.as_hours() < 2 {
-            eprintln!("{feed_url} was already fetched within the last two hours.");
+            println!("{feed_url} was already fetched within the last two hours.");
             return Ok(None);
         };
+    } else {
+        println!("{feed_url} does not have a valid last_fetched field");
     }
 
     let resp = match get_feed_last_modified(conn, url) {
