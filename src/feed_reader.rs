@@ -42,9 +42,11 @@ pub fn fetch_feed(conn: &Connection, agent: &Agent, url: &Url) -> Result<Option<
     let feed_url = url.to_string();
 
     if let Ok(last_fetched) = get_feed_last_fetched(conn, url) {
-        let time_diff = Timestamp::now() - last_fetched;
+        let time_diff = Timestamp::now()
+            .to_zoned(TimeZone::UTC)
+            .duration_since(&last_fetched.to_zoned(TimeZone::UTC));
         eprintln!("{feed_url} was last fetched {time_diff} ago");
-        if time_diff.get_hours() < 2 {
+        if time_diff.as_hours() < 2 {
             eprintln!("{feed_url} was already fetched within the last two hours.");
             return Ok(None);
         };
