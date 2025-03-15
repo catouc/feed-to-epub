@@ -9,11 +9,11 @@ use url::Url;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("database query failed")]
+    #[error("database query failed: {0}")]
     DBError(#[from] rusqlite::Error),
-    #[error("failed HTTP call")]
+    #[error("failed HTTP call: {0}")]
     HTTPError(#[from] ureq::Error),
-    #[error("invalid feed data")]
+    #[error("invalid feed data: {0}")]
     InvalidFeedDataError(#[from] feed_rs::parser::ParseFeedError),
     #[error("invalid timestamp found in feed database: {0}")]
     InvalidTimestamp(#[from] jiff::Error),
