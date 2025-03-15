@@ -9,6 +9,7 @@ use std::{fs, thread, time::Duration};
 
 pub mod config;
 pub mod feed_reader;
+pub mod feed_reader_v2;
 pub mod transformer;
 
 
