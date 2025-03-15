@@ -7,6 +7,8 @@ use thiserror::Error;
 use ureq::Agent;
 use url::Url;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("database query failed: {0}")]
@@ -21,75 +23,120 @@ pub enum Error {
     RateLimitError,
 }
 
-fn get_feed_last_modified(conn: &Connection, feed_url: &Url) -> Result<String, Error> {
-    let mut statement = conn
-        .prepare("SELECT last_modified FROM feeds WHERE feed_url = ?;")
-        .expect("sql query wrong");
-
-    let feed_request = statement.query_row([feed_url.to_string()], |r| r.get(0))?;
-    Ok(feed_request)
+pub struct FeedReader {
+    agent: Agent,
+    db: Connection,
 }
 
-fn get_feed_last_fetched(conn: &Connection, feed_url: &Url) -> Result<Timestamp, Error> {
-    let mut statement = conn
-        .prepare("SELECT last_fetched FROM feeds WHERE feed_url = ?;")
-        .expect("last fetched sql query wrong");
-
-    let last_fetched: String = statement.query_row([feed_url.to_string()], |r| r.get(0))?;
-    let last_fetched_ts: Timestamp = last_fetched.parse()?;
-    Ok(last_fetched_ts)
+pub enum ConditionalType {
+    LastFetched,
+    ETag,
 }
 
-pub fn fetch_feed(conn: &Connection, agent: &Agent, url: &Url) -> Result<Option<Feed>, Error> {
-    let feed_url = url.to_string();
+impl FeedReader {
+    pub fn new(db_file: &str) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .user_agent(&format!(
+                "feed-to-epub {}; +https:/github.com/catouc/feed-to-epub",
+                VERSION
+            ))
+            .build();
 
-    if let Ok(last_fetched) = get_feed_last_fetched(conn, url) {
-        let time_diff = Timestamp::now()
-            .to_zoned(TimeZone::UTC)
-            .duration_since(&last_fetched.to_zoned(TimeZone::UTC));
+        let db = Connection::open(db_file)
+            .expect("failed to connect to feed db");
 
-        println!("{feed_url} was last fetched {time_diff} ago");
-        if time_diff.as_hours() < 2 {
-            println!("{feed_url} was already fetched within the last two hours.");
-            return Ok(None);
-        };
-    } else {
-        println!("{feed_url} does not have a valid last_fetched field");
+        FeedReader{agent, db}
     }
 
-    let resp = match get_feed_last_modified(conn, url) {
-        Ok(last_modified) => agent
-            .get(&feed_url)
-            .set("If-Modified-Since", &last_modified)
-            .call()?,
-        // yes this needs to be better, basically I need to, I think return a
-        // Result<Option<String>, Err> from the get_feed_last_modified func
-        Err(..) => agent.get(&feed_url).call()?,
-    };
+    fn get_last_modified(&self, feed_url: &Url) -> Result<String, Error> {
+        let mut statement = self.db
+            .prepare("SELECT last_modified FROM feeds WHERE feed_url = ?;")
+            .expect("sql query wrong");
 
-    let now = Timestamp::now().to_zoned(TimeZone::UTC).to_string();
+        let last_modified = statement.query_row([feed_url.as_str()], |r| r.get(0))?;
+        Ok(last_modified)
+    }
 
-    if let Some(last_modified_since) = resp.header("Last-Modified") {
-        if let Some(etag) = resp.header("ETag") {
-            conn.execute(
-                "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, last_fetched, etag) VALUES
-                ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3, ?4)",
-                (feed_url, last_modified_since, &now, etag),
-            )?;
+    fn get_etag(&self, feed_url: &Url) -> Result<String, Error> {
+        let mut statement = self.db
+            .prepare("SELECT etag FROM feeds WHERE feed_url = ?;")
+            .expect("sql query wrong");
+
+        let etag = statement.query_row([feed_url.as_str()], |r| r.get(0))?;
+        Ok(etag)
+    }
+
+    fn get_last_fetched(&self, feed_url: &Url) -> Result<Timestamp, Error> {
+        let mut statement = self.db
+            .prepare("SELECT last_fetched FROM feeds WHERE feed_url = ?;")
+            .expect("last fetched sql query wrong");
+
+        let last_fetched: String = statement.query_row([feed_url.as_str()], |r| r.get(0))?;
+        let last_fetched_ts: Timestamp = last_fetched.parse()?;
+        Ok(last_fetched_ts)
+    }
+
+    pub fn fetch_feed(&self, feed_url: &Url, conditional: ConditionalType) -> Result<Option<Feed>, Error> {
+        if let Ok(last_fetched) = self.get_last_fetched(feed_url) {
+            let time_diff = Timestamp::now()
+                .to_zoned(TimeZone::UTC)
+                .duration_since(&last_fetched.to_zoned(TimeZone::UTC));
+
+            println!("{feed_url} was last fetched {time_diff} ago");
+            if time_diff.as_hours() < 2 {
+                println!("{feed_url} was already fetched within the last two hours.");
+                return Ok(None);
+            };
+        }
+
+        let resp = match conditional {
+            ConditionalType::LastFetched => {
+                match self.get_last_modified(feed_url) {
+                    Ok(last_modified) => self.agent
+                        .get(feed_url.as_str())
+                        .set("If-Modified-Since", &last_modified)
+                        .call()?,
+                    // yes this needs to be better, basically I need to, I think return a
+                    // Result<Option<String>, Err> from the get_feed_last_modified func
+                    Err(..) => self.agent.get(feed_url.as_str()).call()?,
+                }
+            },
+            ConditionalType::ETag => {
+                match self.get_etag(feed_url) {
+                    Ok(etag) => self.agent
+                        .get(feed_url.as_str())
+                        .set("ETag", &etag)
+                        .call()?,
+                    // yes this needs to be better, basically I need to, I think return a
+                    // Result<Option<String>, Err> from the get_feed_last_modified func
+                    Err(..) => self.agent.get(feed_url.as_str()).call()?,
+                }
+            },
+        };
+
+        let now = Timestamp::now().to_zoned(TimeZone::UTC).to_string();
+
+        if let Some(last_modified_since) = resp.header("Last-Modified") {
+            if let Some(etag) = resp.header("ETag") {
+                self.db.execute(
+                    "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, last_fetched, etag)
+                    VALUES ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3, ?4)",
+                    (feed_url.as_str(), last_modified_since, &now, etag),
+                )?;
+            } else {
+                self.db.execute(
+                    "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, last_fetched)
+                    VALUES ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3)",
+                    (feed_url.as_str(), last_modified_since, &now),
+                )?;
+            }
         } else {
-            conn.execute(
-                "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, last_fetched) VALUES
-                ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3)",
-                (feed_url, last_modified_since, &now),
+            self.db.execute(
+                "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, last_fetched)
+                VALUES ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3)",
+                (feed_url.as_str(), rusqlite::types::Null, &now),
             )?;
         }
-    } else {
-        conn.execute(
-            "INSERT OR REPLACE INTO feeds (id, feed_url, last_modified, last_fetched) VALUES
-            ((SELECT id FROM feeds WHERE feed_url = ?1), ?1, ?2, ?3)",
-            (feed_url, rusqlite::types::Null, &now),
-        )?;
-    }
 
         match resp.status() {
             304 => Ok(None),

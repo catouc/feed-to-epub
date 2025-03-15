@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::feed_reader::fetch_feed;
+use crate::feed_reader::{FeedReader, ConditionalType};
 use crate::transformer::entry_to_epub;
 use anyhow::Result;
 use clap::Parser;
@@ -11,7 +11,6 @@ pub mod config;
 pub mod feed_reader;
 pub mod transformer;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
@@ -25,12 +24,6 @@ fn main() -> Result<()> {
     let config_path = expanduser(&args.config)?;
     let config = Config::try_from(config_path).expect("failed to load configuration");
 
-    let agent = ureq::AgentBuilder::new()
-        .user_agent(&format!(
-            "feed-to-epub {}; +https:/github.com/catouc/feed-to-epub",
-            VERSION
-        ))
-        .build();
 
     let conn = Connection::open("feed-to-rss.db")?;
     conn.execute(
@@ -44,6 +37,8 @@ fn main() -> Result<()> {
         (),
     )?;
 
+    let feed_reader = FeedReader::new("feed-to-rss.db");
+
     loop {
         for (feed_name, feed) in config.feeds.iter() {
             match fs::create_dir_all(&feed.download_dir) {
@@ -56,8 +51,11 @@ fn main() -> Result<()> {
                 }
             };
 
-            let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
-            let feed_data = fetch_feed(&conn, &agent, &url).unwrap();
+            let url = url::Url::parse(&feed.url)
+                .expect("found invalid URL in configuration");
+            let feed_data = feed_reader
+                .fetch_feed(&url, ConditionalType::LastFetched)
+                .unwrap();
 
             if let Some(feed_data) = feed_data {
                 feed_data.entries.iter().for_each(|entry| {
