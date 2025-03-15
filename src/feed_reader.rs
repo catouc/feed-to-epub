@@ -17,6 +17,8 @@ pub enum Error {
     InvalidFeedDataError(#[from] feed_rs::parser::ParseFeedError),
     #[error("invalid timestamp found in feed database: {0}")]
     InvalidTimestamp(#[from] jiff::Error),
+    #[error("rate limit reached we should back off")]
+    RateLimitError,
 }
 
 fn get_feed_last_modified(conn: &Connection, feed_url: &Url) -> Result<String, Error> {
@@ -89,11 +91,20 @@ pub fn fetch_feed(conn: &Connection, agent: &Agent, url: &Url) -> Result<Option<
         )?;
     }
 
-    if resp.status() == 304 {
-        Ok(None)
-    } else {
-        let feed_response_reader = resp.into_reader();
-        let feed = parser::parse(feed_response_reader)?;
-        Ok(Some(feed))
+        match resp.status() {
+            304 => Ok(None),
+            429 => {
+                // TODO: I should add something to maybe a special table of feeds that have
+                // been rate limited to then check every iteration on whether we've gone past
+                // the `Retry-After` header expiry.
+                Err(Error::RateLimitError)
+            },
+            _ => {
+                let feed_response_reader = resp.into_reader();
+                let feed = parser::parse(feed_response_reader)?;
+                Ok(Some(feed))
+            },
+        }
     }
 }
+
