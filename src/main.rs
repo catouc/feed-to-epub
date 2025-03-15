@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use expanduser::expanduser;
 use rusqlite::Connection;
-use std::{fs, path::PathBuf, thread, time::Duration};
+use std::{fs, thread, time::Duration};
 
 pub mod config;
 pub mod feed_reader;
