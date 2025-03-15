@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::feed_reader::{FeedReader, ConditionalType};
+use crate::feed_reader::{ConditionalType, FeedReader};
 use crate::transformer::entry_to_epub;
 use anyhow::Result;
 use clap::Parser;
@@ -12,7 +12,6 @@ pub mod feed_reader;
 pub mod feed_reader_v2;
 pub mod transformer;
 
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about=None)]
 struct Args {
@@ -24,7 +23,6 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let config_path = expanduser(&args.config)?;
     let config = Config::try_from(config_path).expect("failed to load configuration");
-
 
     let conn = Connection::open("feed-to-rss.db")?;
     conn.execute(
@@ -52,8 +50,7 @@ fn main() -> Result<()> {
                 }
             };
 
-            let url = url::Url::parse(&feed.url)
-                .expect("found invalid URL in configuration");
+            let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
             let feed_data = feed_reader
                 .fetch_feed(&url, ConditionalType::LastFetched)
                 .unwrap();
