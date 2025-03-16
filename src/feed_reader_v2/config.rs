@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::Read;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -35,7 +35,7 @@ pub struct Feed {
     pub url: String,
     #[serde(default = "default_feed_poll_interval_secs")]
     pub poll_interval_secs: u64,
-    pub conditional_type: ConditionalType,
+    pub conditional_type: Option<ConditionalType>,
     pub download_dir: String,
 }
 
@@ -43,18 +43,17 @@ fn default_feed_poll_interval_secs() -> u64 {
     14400
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, PartialEq)]
 pub enum ConditionalType {
     ETag,
     LastModified,
 }
 
-impl TryFrom<PathBuf> for Config {
-    type Error = Error;
-
-    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
-        let f = std::fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&f)?;
+impl Config {
+    fn from_reader<R: Read>(mut reader: R) -> Result<Self, Error> {
+        let mut toml_contents = String::new();
+        reader.read_to_string(&mut toml_contents)?;
+        let config: Config = toml::from_str(&toml_contents)?;
 
         let too_fast_feeds: Vec<String> = config
             .feeds
@@ -76,4 +75,59 @@ impl TryFrom<PathBuf> for Config {
 
         Ok(config)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_from_reader_defaults() {
+        let buf = String::from("
+[feeds.test]
+url = \"https://example.com/rss\"
+download_dir = \"/tmp/test\"
+        ");
+
+        let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
+        assert_eq!(config.feeds["test"].url, "https://example.com/rss");
+        assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
+        assert_eq!(config.feeds["test"].conditional_type, None);
+        assert_eq!(config.feeds["test"].poll_interval_secs, 14400);
+    }
+
+    #[test]
+    fn config_from_reader_custom_etag() {
+        let buf = String::from("
+[feeds.test]
+url = \"https://example.com/rss\"
+download_dir = \"/tmp/test\"
+poll_interval_secs = 3601
+conditional_type = \"ETag\"
+        ");
+
+        let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
+        assert_eq!(config.feeds["test"].url, "https://example.com/rss");
+        assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
+        assert_eq!(config.feeds["test"].conditional_type, Some(ConditionalType::ETag));
+        assert_eq!(config.feeds["test"].poll_interval_secs, 3601);
+    }
+
+    #[test]
+    fn config_from_reader_custom_last_modified() {
+        let buf = String::from("
+[feeds.test]
+url = \"https://example.com/rss\"
+download_dir = \"/tmp/test\"
+poll_interval_secs = 3601
+conditional_type = \"LastModified\"
+        ");
+
+        let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
+        assert_eq!(config.feeds["test"].url, "https://example.com/rss");
+        assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
+        assert_eq!(config.feeds["test"].conditional_type, Some(ConditionalType::LastModified));
+        assert_eq!(config.feeds["test"].poll_interval_secs, 3601);
+    }
+
 }
