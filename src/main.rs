@@ -57,7 +57,7 @@ fn main() -> Result<()> {
                     eprintln!("encountered error while fetching feed {url}: {err}");
                     None
                 },
-            }
+            };
 
             if let Some(feed_data) = feed_data {
                 feed_data.entries.iter().for_each(|entry| {
