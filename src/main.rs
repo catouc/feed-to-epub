@@ -51,9 +51,13 @@ fn main() -> Result<()> {
             };
 
             let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
-            let feed_data = feed_reader
-                .fetch_feed(&url, ConditionalType::LastFetched)
-                .unwrap();
+            let feed_data = match feed_reader.fetch_feed(&url, ConditionalType::LastFetched) {
+                Ok(feed_data) => feed_data,
+                Err(err) => {
+                    eprintln!("encountered error while fetching feed {url}: {err}");
+                    None
+                },
+            }
 
             if let Some(feed_data) = feed_data {
                 feed_data.entries.iter().for_each(|entry| {

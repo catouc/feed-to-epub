@@ -13,6 +13,8 @@ pub enum Error {
     SummaryExtractionError,
     #[error("could not get title from entry")]
     TitleExtractionError,
+    #[error("could not build epub library builder: {0}")]
+    EpubBuilderError(#[from] epub_builder::Error)
 }
 
 pub fn entry_to_epub(
@@ -23,10 +25,9 @@ pub fn entry_to_epub(
     let html = extract_html_string_from_entry(entry)?;
     let xhtml = html_string_to_xhtml_epub_string(&html);
 
-    let mut epub_builder = EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
+    let mut epub_builder = EpubBuilder::new(ZipLibrary::new()?)?;
     epub_builder
-        .metadata("generator", "feed-to-epub")
-        .unwrap()
+        .metadata("generator", "feed-to-epub")?
         .add_metadata_opf(MetadataOpf {
             name: "calibre:series".into(),
             content: feed_name.into(),
@@ -43,9 +44,7 @@ pub fn entry_to_epub(
         // the description fied.
         const MAX_SUMMARY_LENGTH_BYTES: usize = 1000;
         if summary.content.len() < MAX_SUMMARY_LENGTH_BYTES {
-            epub_builder
-                .metadata("description", &summary.content)
-                .unwrap();
+            epub_builder.metadata("description", &summary.content)?;
         };
     }
 
@@ -77,15 +76,13 @@ pub fn entry_to_epub(
     match &entry.title {
         Some(title) => {
             let _ = &epub_builder
-                .metadata("title", &title.content)
-                .unwrap()
-                .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))
-                .unwrap();
+                .metadata("title", &title.content)?
+                .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))?;
         }
         None => return Err(Error::TitleExtractionError),
     }
 
-    epub_builder.generate(epub_file).unwrap();
+    epub_builder.generate(epub_file)?;
     Ok(())
 }
 
