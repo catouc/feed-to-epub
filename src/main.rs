@@ -10,6 +10,7 @@ use std::{fs, thread, time::Duration};
 pub mod config;
 pub mod feed_reader;
 pub mod feed_reader_v2;
+pub mod storage;
 pub mod transformer;
 
 #[derive(Parser, Debug)]
@@ -56,7 +57,7 @@ fn main() -> Result<()> {
                 Err(err) => {
                     eprintln!("encountered error while fetching feed {url}: {err}");
                     None
-                },
+                }
             };
 
             if let Some(feed_data) = feed_data {

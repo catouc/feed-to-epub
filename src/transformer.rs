@@ -14,7 +14,7 @@ pub enum Error {
     #[error("could not get title from entry")]
     TitleExtractionError,
     #[error("could not build epub library builder: {0}")]
-    EpubBuilderError(#[from] epub_builder::Error)
+    EpubBuilderError(#[from] epub_builder::Error),
 }
 
 pub fn entry_to_epub(
