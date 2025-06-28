@@ -51,7 +51,11 @@ impl FeedReader {
         Ok(FeedReader { agent, db, config })
     }
 
-    fn fetch(&self) -> Result<Vec<Feed>, FetchError> {
+    fn fetch_all(&self) -> Result<Vec<Feed>, FetchError> {
+        todo!()
+    }
+
+    fn fetch_feed(&self) -> Result<Feed, FetchError> {
         todo!()
     }
 }

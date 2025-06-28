@@ -83,11 +83,13 @@ mod tests {
 
     #[test]
     fn config_from_reader_defaults() {
-        let buf = String::from("
+        let buf = String::from(
+            "
 [feeds.test]
 url = \"https://example.com/rss\"
 download_dir = \"/tmp/test\"
-        ");
+        ",
+        );
 
         let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
         assert_eq!(config.feeds["test"].url, "https://example.com/rss");
@@ -98,36 +100,45 @@ download_dir = \"/tmp/test\"
 
     #[test]
     fn config_from_reader_custom_etag() {
-        let buf = String::from("
+        let buf = String::from(
+            "
 [feeds.test]
 url = \"https://example.com/rss\"
 download_dir = \"/tmp/test\"
 poll_interval_secs = 3601
 conditional_type = \"ETag\"
-        ");
+        ",
+        );
 
         let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
         assert_eq!(config.feeds["test"].url, "https://example.com/rss");
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
-        assert_eq!(config.feeds["test"].conditional_type, Some(ConditionalType::ETag));
+        assert_eq!(
+            config.feeds["test"].conditional_type,
+            Some(ConditionalType::ETag)
+        );
         assert_eq!(config.feeds["test"].poll_interval_secs, 3601);
     }
 
     #[test]
     fn config_from_reader_custom_last_modified() {
-        let buf = String::from("
+        let buf = String::from(
+            "
 [feeds.test]
 url = \"https://example.com/rss\"
 download_dir = \"/tmp/test\"
 poll_interval_secs = 3601
 conditional_type = \"LastModified\"
-        ");
+        ",
+        );
 
         let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
         assert_eq!(config.feeds["test"].url, "https://example.com/rss");
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
-        assert_eq!(config.feeds["test"].conditional_type, Some(ConditionalType::LastModified));
+        assert_eq!(
+            config.feeds["test"].conditional_type,
+            Some(ConditionalType::LastModified)
+        );
         assert_eq!(config.feeds["test"].poll_interval_secs, 3601);
     }
-
 }
