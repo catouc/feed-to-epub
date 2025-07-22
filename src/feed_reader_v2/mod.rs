@@ -1,6 +1,6 @@
 use crate::feed_reader_v2::config::Config;
+use crate::storage::Storage;
 use feed_rs::model::Feed;
-use rusqlite::Connection;
 use thiserror::Error;
 use ureq::Agent;
 
@@ -9,33 +9,28 @@ pub mod config;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Error, Debug)]
-pub enum CreationError {
-    #[error("failed to open database file {db_file}: {source}")]
-    DBFileOpenError {
-        db_file: String,
-        source: rusqlite::Error,
-    },
+pub enum FetchError {
+    #[error("failed to parse feed XML: {0}")]
+    FeedParseError(#[from] feed_rs::parser::ParseFeedError),
+    #[error("storage create error: {0}")]
+    StorageCreateError(#[from] crate::storage::ErrorNew),
+    #[error("storage error: {0}")]
+    StorageDBOperationError(#[from] crate::storage::ErrorDBOperation),
+    #[error("failed to execute HTTP request: {0}")]
+    HTTPError(#[from] ureq::Error), 
 }
-
-#[derive(Error, Debug)]
-pub enum FetchError {}
 
 pub struct FeedReader {
     agent: Agent,
-    db: Connection,
+    storage: Storage,
     config: Config,
 }
 
 impl FeedReader {
-    fn new(config: Config) -> Result<Self, CreationError> {
-        let db = match Connection::open(&config.db_file) {
-            Ok(db) => db,
-            Err(err) => {
-                return Err(CreationError::DBFileOpenError {
-                    db_file: config.db_file.clone(),
-                    source: err,
-                })
-            }
+    fn new(config: Config) -> Result<Self, crate::storage::ErrorNew> {
+        let storage = match Storage::new(&config.db_file) {
+            Ok(storage) => storage,
+            Err(err) => return Err(err),
         };
 
         let agent = ureq::AgentBuilder::new()
