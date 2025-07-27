@@ -9,17 +9,19 @@ pub enum Error {
     TOMLParseError(#[from] toml::de::Error),
     #[error("database query failed: {0}")]
     FileError(#[from] std::io::Error),
-    #[error("behave, the poll interval cannot be set below 1h: {:?}", feeds)]
-    PollIntervalTooFastError { feeds: Vec<String> },
+    #[error("behave, the poll interval cannot be set below 1h")]
+    PollIntervalTooFastError,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Config {
     pub feeds: HashMap<String, Feed>,
     #[serde(default = "default_db_file")]
     pub db_file: String,
     #[serde(default = "default_http_request_timeout_secs")]
     pub http_request_timeout_secs: u64,
+    #[serde(default = "default_feed_poll_interval_secs")]
+    pub poll_interval_secs: u64,
 }
 
 fn default_db_file() -> String {
@@ -30,31 +32,35 @@ fn default_http_request_timeout_secs() -> u64 {
     15
 }
 
-#[derive(Deserialize)]
-pub struct Feed {
-    pub url: String,
-    #[serde(default = "default_feed_poll_interval_secs")]
-    pub poll_interval_secs: u64,
-    pub conditional_type: Option<ConditionalType>,
-    pub download_dir: String,
-}
-
 fn default_feed_poll_interval_secs() -> u64 {
     14400
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize)]
+pub struct Feed {
+    pub url: String,
+    pub conditional_type: ConditionalType,
+    pub download_dir: String,
+}
+
+#[derive(Clone, Deserialize, Debug, PartialEq)]
 pub enum ConditionalType {
     ETag,
     LastModified,
 }
 
 impl Config {
-    fn from_reader<R: Read>(mut reader: R) -> Result<Self, Error> {
+    pub fn from_reader<R: Read>(mut reader: R) -> Result<Self, Error> {
         let mut toml_contents = String::new();
         reader.read_to_string(&mut toml_contents)?;
         let config: Config = toml::from_str(&toml_contents)?;
 
+        if config.poll_interval_secs < 3600 {
+            return Err(Error::PollIntervalTooFastError);
+        }
+
+        /* Maybe one day I'll revisit the whole, poll by feed idea properly
+         * For now a global one seems easier to roll.
         let too_fast_feeds: Vec<String> = config
             .feeds
             .iter()
@@ -72,7 +78,7 @@ impl Config {
                 feeds: too_fast_feeds,
             });
         }
-
+        */
         Ok(config)
     }
 }
@@ -88,14 +94,15 @@ mod tests {
 [feeds.test]
 url = \"https://example.com/rss\"
 download_dir = \"/tmp/test\"
+conditional_type = \"LastModified\"
         ",
         );
 
         let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
+        assert_eq!(config.poll_interval_secs, 14400);
         assert_eq!(config.feeds["test"].url, "https://example.com/rss");
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
-        assert_eq!(config.feeds["test"].conditional_type, None);
-        assert_eq!(config.feeds["test"].poll_interval_secs, 14400);
+        assert_eq!(config.feeds["test"].conditional_type, ConditionalType::LastModified);
     }
 
     #[test]
@@ -105,7 +112,6 @@ download_dir = \"/tmp/test\"
 [feeds.test]
 url = \"https://example.com/rss\"
 download_dir = \"/tmp/test\"
-poll_interval_secs = 3601
 conditional_type = \"ETag\"
         ",
         );
@@ -115,9 +121,8 @@ conditional_type = \"ETag\"
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
         assert_eq!(
             config.feeds["test"].conditional_type,
-            Some(ConditionalType::ETag)
+            ConditionalType::ETag
         );
-        assert_eq!(config.feeds["test"].poll_interval_secs, 3601);
     }
 
     #[test]
@@ -127,7 +132,6 @@ conditional_type = \"ETag\"
 [feeds.test]
 url = \"https://example.com/rss\"
 download_dir = \"/tmp/test\"
-poll_interval_secs = 3601
 conditional_type = \"LastModified\"
         ",
         );
@@ -137,8 +141,7 @@ conditional_type = \"LastModified\"
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
         assert_eq!(
             config.feeds["test"].conditional_type,
-            Some(ConditionalType::LastModified)
+            ConditionalType::LastModified
         );
-        assert_eq!(config.feeds["test"].poll_interval_secs, 3601);
     }
 }

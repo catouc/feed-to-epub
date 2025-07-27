@@ -1,15 +1,12 @@
-use crate::config::Config;
-use crate::feed_reader::{ConditionalType, FeedReader};
+use crate::feed_reader::config::Config;
+use crate::feed_reader::FeedReader;
 use crate::transformer::entry_to_epub;
 use anyhow::Result;
 use clap::Parser;
 use expanduser::expanduser;
-use rusqlite::Connection;
-use std::{fs, thread, time::Duration};
+use std::{fs::File, thread, time::Duration};
 
-pub mod config;
 pub mod feed_reader;
-pub mod feed_reader_v2;
 pub mod storage;
 pub mod transformer;
 
@@ -22,40 +19,20 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let config_path = expanduser(&args.config)?;
-    let config = Config::try_from(config_path).expect("failed to load configuration");
-
-    let conn = Connection::open("feed-to-rss.db")?;
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS feeds (
-            id INTEGER PRIMARY KEY,
-            feed_url TEXT NOT NULL,
-            last_modified TEXT,
-            last_fetched TEXT,
-            etag TEXT
-        )",
-        (),
-    )?;
-
-    let feed_reader = FeedReader::new("feed-to-rss.db");
+    let config_file = File::open(expanduser(&args.config)?)?;
+    let config = Config::from_reader(config_file).expect("failed to read config file");
+    let feed_reader_v2 = FeedReader::new(config).expect("failed to set up feed reader");
 
     loop {
-        for (feed_name, feed) in config.feeds.iter() {
-            match fs::create_dir_all(&feed.download_dir) {
-                Ok(_) => (),
-                Err(err) => {
-                    eprintln!(
-                        "failed to create download dir {} for feed {}: {}",
-                        &feed.download_dir, feed_name, err,
-                    )
-                }
-            };
-
-            let url = url::Url::parse(&feed.url).expect("found invalid URL in configuration");
-            let feed_data = match feed_reader.fetch_feed(&url, ConditionalType::LastFetched) {
+        for (feed_name, feed) in feed_reader_v2.config.feeds.iter() {
+            let feed_data = match feed_reader_v2.fetch_feed(
+                feed_name,
+                &feed.download_dir,
+                jiff::Timestamp::now(),
+            ) {
                 Ok(feed_data) => feed_data,
                 Err(err) => {
-                    eprintln!("encountered error while fetching feed {url}: {err}");
+                    eprintln!("encountered error while fetching feed {}: {err}", feed.url);
                     None
                 }
             };
@@ -70,6 +47,8 @@ fn main() -> Result<()> {
             }
         }
 
-        thread::sleep(Duration::from_secs(config.poll_interval_secs))
+        thread::sleep(Duration::from_secs(
+            feed_reader_v2.config.poll_interval_secs,
+        ))
     }
 }

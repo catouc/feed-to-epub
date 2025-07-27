@@ -1,6 +1,6 @@
 [package]
 name = "feed-to-epub"
-version = "0.6.3"
+version = "0.7.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -14,7 +14,7 @@ expanduser = "1.2.2"
 feed-rs = "2.0.0"
 rusqlite = "0.31.0"
 serde = { version = "1.0.204", features = ["derive"] }
-thiserror = "1.0.61"
+thiserror = "2.0.11"
 toml = "0.8.14"
 ureq = "2.10.0"
 url = "2.5.2"
