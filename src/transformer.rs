@@ -91,5 +91,5 @@ pub fn entry_to_epub(
 }
 
 pub fn entry_title_to_file_name(destination_dir: &str, title: &str) -> PathBuf {
-    PathBuf::from(format!("{}/{}.epub", destination_dir, title))
+    PathBuf::from(format!("{destination_dir}/{title}.epub"))
 }

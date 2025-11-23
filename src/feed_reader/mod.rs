@@ -40,8 +40,7 @@ impl FeedReader {
 
         let agent = ureq::AgentBuilder::new()
             .user_agent(&format!(
-                "feed-to-epub {}; +https:/github.com/catouc/feed-to-epub",
-                VERSION
+                "feed-to-epub {VERSION}; +https:/github.com/catouc/feed-to-epub"
             ))
             .timeout(std::time::Duration::from_secs(
                 config.http_request_timeout_secs,
@@ -92,8 +91,7 @@ impl FeedReader {
             Ok(_) => (),
             Err(err) => {
                 eprintln!(
-                    "failed to create download dir {} for feed {}: {}",
-                    download_dir, feed_name, err,
+                    "failed to create download dir {download_dir} for feed {feed_name}: {err}"
                 )
             }
         };
@@ -158,14 +156,14 @@ impl FeedReader {
                     match crate::storage::entry_from_feed_entry(feed_stats.id, e) {
                         Ok(entry) => Some(entry),
                         Err(err) => {
-                            eprintln!("{}", err);
+                            eprintln!("{err}");
                             None
                         } // TODO: we really shouldn't log the error here I think
                     }
                 })
                 .for_each(|e| match self.storage.new_entry_to_db(&e) {
                     Ok(_) => (),
-                    Err(err) => eprintln!("{}", err),
+                    Err(err) => eprintln!("{err}"),
                 });
 
             feed_stats.last_fetched = Some(jiff::Timestamp::now());

@@ -102,7 +102,10 @@ conditional_type = \"LastModified\"
         assert_eq!(config.poll_interval_secs, 14400);
         assert_eq!(config.feeds["test"].url, "https://example.com/rss");
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
-        assert_eq!(config.feeds["test"].conditional_type, ConditionalType::LastModified);
+        assert_eq!(
+            config.feeds["test"].conditional_type,
+            ConditionalType::LastModified
+        );
     }
 
     #[test]
@@ -119,10 +122,7 @@ conditional_type = \"ETag\"
         let config = Config::from_reader(buf.as_bytes()).expect("failed to parse configuration");
         assert_eq!(config.feeds["test"].url, "https://example.com/rss");
         assert_eq!(config.feeds["test"].download_dir, "/tmp/test");
-        assert_eq!(
-            config.feeds["test"].conditional_type,
-            ConditionalType::ETag
-        );
+        assert_eq!(config.feeds["test"].conditional_type, ConditionalType::ETag);
     }
 
     #[test]

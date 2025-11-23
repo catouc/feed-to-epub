@@ -1,3 +1,5 @@
+#![allow(clippy::pedantic)]
+
 use crate::feed_reader::config::Config;
 use crate::feed_reader::FeedReader;
 use crate::transformer::entry_to_epub;
@@ -41,7 +43,7 @@ fn main() -> Result<()> {
                 feed_data.entries.iter().for_each(|entry| {
                     match entry_to_epub(feed_name, &feed.download_dir, entry) {
                         Ok(..) => (),
-                        Err(err) => println!("failed to create epub: {}", err),
+                        Err(err) => println!("failed to create epub: {err}"),
                     }
                 });
             }

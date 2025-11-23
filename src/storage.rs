@@ -2,6 +2,19 @@ use jiff::Timestamp;
 use rusqlite::OptionalExtension;
 use thiserror::Error;
 
+#[derive(Error, Debug)]
+pub enum ErrorNew {
+    #[error("invalid timestamp found in database: {0}")]
+    InvalidTimestamp(#[from] jiff::Error),
+    #[error("failed to open database file {db_file}: {source}")]
+    DBFileOpenError {
+        db_file: String,
+        source: rusqlite::Error,
+    },
+    #[error("failed to initialise database: {0}")]
+    DBError(#[from] ErrorDBOperation),
+}
+
 pub struct Storage {
     db: rusqlite::Connection,
 }
@@ -18,6 +31,22 @@ impl Storage {
             }
         };
 
+        Ok(Storage { db })
+    }
+
+    /// new_in_memory is largely only ever used in testing
+    /// as a convenience to not have to deal with the life-
+    /// cycle of a file handle.
+    pub fn new_in_memory() -> Result<Self, ErrorNew> {
+        let db = match rusqlite::Connection::open_in_memory() {
+            Ok(db) => db,
+            Err(err) => {
+                return Err(ErrorNew::DBFileOpenError {
+                    db_file: "memory".into(),
+                    source: err,
+                })
+            }
+        };
         Ok(Storage { db })
     }
 
@@ -108,7 +137,7 @@ impl Storage {
                     etag: r.get(3)?,
                 };
 
-                println!("{:#?}", feed_stats);
+                println!("{feed_stats:#?}");
                 Ok(feed_stats)
             })
             .optional()?;
@@ -167,19 +196,6 @@ pub struct Entry {
     pub authors: Option<String>, // TODO: make this a vec?
     pub summary: String,
     pub content: String,
-}
-
-#[derive(Error, Debug)]
-pub enum ErrorNew {
-    #[error("invalid timestamp found in database: {0}")]
-    InvalidTimestamp(#[from] jiff::Error),
-    #[error("failed to open database file {db_file}: {source}")]
-    DBFileOpenError {
-        db_file: String,
-        source: rusqlite::Error,
-    },
-    #[error("failed to initialise database: {0}")]
-    DBError(#[from] ErrorDBOperation),
 }
 
 #[derive(Error, Debug)]
@@ -321,8 +337,7 @@ mod tests {
 
     #[test]
     fn feed_to_and_from_db() {
-        let db = rusqlite::Connection::open_in_memory().expect("could not open DB in memory");
-        let storage = Storage { db };
+        let storage = Storage::new_in_memory().expect("failed to open in memory db");
         storage.init_database().expect("failed to set up test DB");
         let now = Timestamp::now();
 
@@ -334,7 +349,7 @@ mod tests {
             etag: Some("foo".into()),
         };
 
-        let _ = storage
+        storage
             .feed_stats_to_db(&feed_stats)
             .expect("failed to store feed_stats");
         let db_feed_stats = storage
@@ -357,7 +372,7 @@ mod tests {
             content: "<XML here>".into(),
         };
 
-        let _ = storage
+        storage
             .new_entry_to_db(&feed_entry)
             .expect("failed to store feed_entry");
         let db_feed_entry = storage
