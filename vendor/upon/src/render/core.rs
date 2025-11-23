@@ -6,8 +6,9 @@ use crate::render::stack::{Stack, State};
 use crate::render::RendererInner;
 use crate::types::ast;
 use crate::types::program::{Instr, Template};
+use crate::types::span::Span;
 use crate::value::ValueCow;
-use crate::{EngineBoxFn, Error, Result};
+use crate::{EngineBoxCallable, Error, Result, Value};
 
 #[cfg_attr(internal_debug, derive(Debug))]
 pub struct RendererImpl<'render, 'stack> {
@@ -15,14 +16,15 @@ pub struct RendererImpl<'render, 'stack> {
     pub(crate) stack: Stack<'stack>,
 }
 
-#[cfg(feature = "filters")]
+#[cfg(feature = "functions")]
 #[cfg_attr(internal_debug, derive(Debug))]
-pub struct FilterState<'a> {
-    pub stack: &'a Stack<'a>,
-    pub source: &'a str,
-    pub filter: &'a ast::Ident,
-    pub value: &'a mut ValueCow<'a>,
-    pub args: &'a [ast::BaseExpr],
+pub struct FunctionState<'stack, 'args>
+where
+    'stack: 'args,
+{
+    pub source: &'stack str,
+    pub fname: &'args str,
+    pub args: &'args mut [(ValueCow<'stack>, Span)],
 }
 
 #[cfg_attr(internal_debug, derive(Debug))]
@@ -69,7 +71,8 @@ where
                                 Some(s) => e.with_template_name(s.to_owned()),
                                 None => e,
                             })?;
-                    templates.push((template, Some(template_name.as_str()), 0, false));
+                    let name = Some(template_name.as_str());
+                    templates.push((template, name, 0, false));
                 }
                 RenderState::IncludeWith {
                     template_name,
@@ -83,7 +86,8 @@ where
                             })?;
                     self.stack.push(State::Boundary);
                     self.stack.push(State::Scope(globals));
-                    templates.push((template, Some(template_name.as_str()), 0, true));
+                    let name = Some(template_name.as_str());
+                    templates.push((template, name, 0, true));
                 }
             }
             if templates.len() > max_include_depth {
@@ -100,8 +104,8 @@ where
         t: &'render Template<'render>,
         pc: &mut usize,
     ) -> Result<RenderState<'render, 'stack>> {
-        // An expression that we are building
-        let mut expr: Option<ValueCow<'stack>> = None;
+        // The expressions that we are building
+        let mut exprs: Vec<(ValueCow<'stack>, Span)> = Vec::new();
 
         while let Some(instr) = t.instrs.get(*pc) {
             match instr {
@@ -111,23 +115,23 @@ where
                 }
 
                 Instr::JumpIfTrue(j) => {
-                    if expr.take().unwrap().as_bool() {
+                    if exprs.pop().unwrap().0.as_bool() {
                         *pc = *j;
                         continue;
                     }
                 }
 
                 Instr::JumpIfFalse(j) => {
-                    if !expr.take().unwrap().as_bool() {
+                    if !exprs.pop().unwrap().0.as_bool() {
                         *pc = *j;
                         continue;
                     }
                 }
 
-                Instr::Emit(span) => {
-                    let value = expr.take().unwrap();
+                Instr::Emit => {
+                    let (value, span) = exprs.pop().unwrap();
                     (self.inner.engine.default_formatter)(f, &value)
-                        .map_err(|err| Error::format(err, &t.source, *span))?;
+                        .map_err(|err| Error::format(err, &t.source, span))?;
                 }
 
                 Instr::EmitRaw(span) => {
@@ -137,37 +141,37 @@ where
                     f.write_str(raw)?;
                 }
 
-                Instr::EmitWith(name, _span) => {
-                    let name_raw = &t.source[name.span];
-                    match self.inner.engine.functions.get(name_raw) {
-                        // The referenced function is a filter, so we apply
-                        // it and then emit the value using the default
-                        // formatter.
-                        #[cfg(feature = "filters")]
-                        Some(EngineBoxFn::Filter(filter)) => {
-                            let mut value = expr.take().unwrap();
-                            let result = filter(FilterState {
-                                stack: &self.stack,
-                                source: &t.source,
-                                filter: name,
-                                value: &mut value,
-                                args: &[],
-                            })
-                            .map_err(|err| err.enrich(&t.source, name.span))?;
-                            (self.inner.engine.default_formatter)(f, &result)
-                                .map_err(|err| Error::format(err, &t.source, *_span))?;
-                        }
+                Instr::EmitWith(name, _arity, _span) => {
+                    let fname = &t.source[name.span];
+                    match self.inner.engine.callables.get(fname) {
                         // The referenced function is a formatter so we simply
                         // emit the value with it.
-                        Some(EngineBoxFn::Formatter(formatter)) => {
-                            let value = expr.take().unwrap();
+                        Some(EngineBoxCallable::Formatter(formatter)) => {
+                            let (value, _) = exprs.pop().unwrap();
                             formatter(f, &value)
                                 .map_err(|err| Error::format(err, &t.source, name.span))?;
                         }
-                        // No filter or formatter exists.
+                        // The referenced function is a function, so we apply
+                        // it and then emit the value using the default
+                        // formatter.
+                        #[cfg(feature = "functions")]
+                        Some(EngineBoxCallable::Function(function)) => {
+                            let at = exprs.len() - _arity;
+                            let args = &mut exprs[at..];
+                            let result = function(FunctionState {
+                                source: &t.source,
+                                fname,
+                                args,
+                            })
+                            .map_err(|err| err.enrich(&t.source, name.span))?;
+                            exprs.truncate(at);
+                            (self.inner.engine.default_formatter)(f, &result)
+                                .map_err(|err| Error::format(err, &t.source, *_span))?;
+                        }
+                        // No formatter or function exists.
                         None => {
                             return Err(Error::render(
-                                "unknown filter or formatter",
+                                "unknown formatter or function",
                                 &t.source,
                                 name.span,
                             ));
@@ -176,7 +180,7 @@ where
                 }
 
                 Instr::LoopStart(vars, span) => {
-                    let iterable = expr.take().unwrap();
+                    let (iterable, _) = exprs.pop().unwrap();
                     self.stack.push(State::Loop(LoopState::new(
                         &t.source, vars, iterable, *span,
                     )?));
@@ -191,7 +195,7 @@ where
                 }
 
                 Instr::WithStart(name) => {
-                    let value = expr.take().unwrap();
+                    let (value, _) = exprs.pop().unwrap();
                     self.stack.push(State::Var(name, value))
                 }
 
@@ -201,62 +205,90 @@ where
 
                 Instr::Include(template_name) => {
                     *pc += 1;
+                    debug_assert!(exprs.is_empty());
                     return Ok(RenderState::Include { template_name });
                 }
 
                 Instr::IncludeWith(template_name) => {
                     *pc += 1;
-                    let globals = expr.take().unwrap();
+                    let (globals, _) = exprs.pop().unwrap();
+                    debug_assert!(exprs.is_empty());
                     return Ok(RenderState::IncludeWith {
                         template_name,
                         globals,
                     });
                 }
 
-                Instr::ExprStart(var) => {
+                Instr::ExprStartVar(var) => {
                     let value = self.stack.lookup_var(&t.source, var)?;
-                    let prev = expr.replace(value);
-                    debug_assert!(prev.is_none());
+                    exprs.push((value, var.span()));
                 }
 
-                Instr::ExprStartLit(value) => {
-                    let prev = expr.replace(ValueCow::Owned(value.clone()));
-                    debug_assert!(prev.is_none());
+                Instr::ExprStartLiteral(literal) => {
+                    let value = ValueCow::Borrowed(&literal.value);
+                    exprs.push((value, literal.span));
                 }
 
-                Instr::Apply(name, _, _args) => {
-                    let name_raw = &t.source[name.span];
-                    match self.inner.engine.functions.get(name_raw) {
-                        // The referenced function is a filter, so we apply it.
-                        #[cfg(feature = "filters")]
-                        Some(EngineBoxFn::Filter(filter)) => {
-                            let mut value = expr.take().unwrap();
-                            let args = _args
-                                .as_ref()
-                                .map(|args| args.values.as_slice())
-                                .unwrap_or(&[]);
-                            let result = filter(FilterState {
-                                stack: &self.stack,
-                                source: &t.source,
-                                filter: name,
-                                value: &mut value,
-                                args,
-                            })
-                            .map_err(|e| e.enrich(&t.source, name.span))?;
-                            expr.replace(ValueCow::Owned(result));
+                Instr::ExprStartList(span) => {
+                    let value = ValueCow::Owned(crate::Value::new_list());
+                    exprs.push((value, *span));
+                }
+
+                Instr::ExprStartMap(span) => {
+                    let value = ValueCow::Owned(crate::Value::new_map());
+                    exprs.push((value, *span));
+                }
+
+                Instr::ExprListPush => {
+                    let (item, _) = exprs.pop().unwrap();
+                    match exprs.last_mut().unwrap() {
+                        (ValueCow::Owned(Value::List(l)), _) => {
+                            l.push(item.to_owned());
                         }
+                        _ => panic!("expected owned list"),
+                    }
+                }
+
+                Instr::ExprMapInsert(key) => {
+                    let key = key.value.clone();
+                    let (value, _) = exprs.pop().unwrap();
+                    match exprs.last_mut().unwrap() {
+                        (ValueCow::Owned(Value::Map(m)), _) => {
+                            m.insert(key, value.to_owned());
+                        }
+                        _ => panic!("expected owned map"),
+                    }
+                }
+
+                Instr::Apply(name, _arity, _span) => {
+                    let fname = &t.source[name.span];
+                    match self.inner.engine.callables.get(fname) {
                         // The referenced function is a formatter which is not valid
                         // in the middle of an expression.
-                        Some(EngineBoxFn::Formatter(_)) => {
+                        Some(EngineBoxCallable::Formatter(_)) => {
                             return Err(Error::render(
-                                "expected filter, found formatter",
+                                "expected function, found formatter",
                                 &t.source,
                                 name.span,
                             ));
                         }
-                        // No filter or formatter exists.
+                        // The referenced function is a function, so we apply it.
+                        #[cfg(feature = "functions")]
+                        Some(EngineBoxCallable::Function(function)) => {
+                            let at = exprs.len() - _arity;
+                            let args = &mut exprs[at..];
+                            let result = function(FunctionState {
+                                source: &t.source,
+                                fname,
+                                args,
+                            })
+                            .map_err(|e| e.enrich(&t.source, *_span))?;
+                            exprs.truncate(at);
+                            exprs.push((ValueCow::Owned(result), *_span));
+                        }
+                        // No formatter or function exists.
                         None => {
-                            return Err(Error::render("unknown filter", &t.source, name.span));
+                            return Err(Error::render("unknown function", &t.source, name.span));
                         }
                     }
                 }
@@ -265,6 +297,7 @@ where
         }
 
         assert!(*pc == t.instrs.len());
+        debug_assert!(exprs.is_empty());
         Ok(RenderState::Done)
     }
 

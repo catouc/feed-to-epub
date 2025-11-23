@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::types::ast;
 use crate::value::ValueCow;
 use crate::{Error, Result, Value};
@@ -5,7 +7,9 @@ use crate::{Error, Result, Value};
 impl ValueCow<'_> {
     pub fn as_bool(&self) -> bool {
         match &**self {
-            Value::None | Value::Bool(false) | Value::Integer(0) => false,
+            Value::None => false,
+            Value::Bool(false) => false,
+            Value::Integer(0) => false,
             Value::Float(n) if *n == 0.0 => false,
             Value::String(s) if s.is_empty() => false,
             Value::List(l) if l.is_empty() => false,
@@ -26,6 +30,14 @@ impl Value {
             Value::List(_) => "list",
             Value::Map(_) => "map",
         }
+    }
+
+    pub(crate) fn new_map() -> Self {
+        Self::Map(BTreeMap::new())
+    }
+
+    pub(crate) fn new_list() -> Self {
+        Self::List(Vec::new())
     }
 }
 
@@ -58,7 +70,7 @@ pub fn lookup_path<'a>(
     }
 }
 
-/// Lookup the given path, return None if the first segment is not found.
+/// Lookup the given path, return None if the first member is not found.
 pub fn lookup_path_maybe<'a>(
     source: &str,
     value: &ValueCow<'a>,
@@ -69,7 +81,7 @@ pub fn lookup_path_maybe<'a>(
             for (i, p) in path.iter().enumerate() {
                 match lookup(source, value, p) {
                     Ok(Some(v)) => value = v,
-                    Ok(None) | Err(_) if i == 0 => return Ok(None),
+                    Err(_) if i == 0 => return Ok(None),
                     Ok(None) => return Ok(Some(ValueCow::Borrowed(&Value::None))),
                     Err(err) => return Err(err),
                 };
@@ -81,7 +93,7 @@ pub fn lookup_path_maybe<'a>(
             for (i, p) in path.iter().enumerate() {
                 match lookup(source, value, p) {
                     Ok(Some(v)) => value = v,
-                    Ok(None) | Err(_) if i == 0 => return Ok(None),
+                    Err(_) if i == 0 => return Ok(None),
                     Ok(None) => return Ok(Some(ValueCow::Borrowed(&Value::None))),
                     Err(err) => return Err(err),
                 };

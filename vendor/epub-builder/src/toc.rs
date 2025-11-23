@@ -126,7 +126,7 @@ impl TocElement {
         };
         // Try to use the raw title of all HTML elements; if it doesn't exist, insert escaped title
         let mut title = html_escape::encode_text(&self.title);
-        if let Some(ref raw_title) = &self.raw_title {
+        if let Some(raw_title) = &self.raw_title {
             title = std::borrow::Cow::Borrowed(raw_title);
         }
         (

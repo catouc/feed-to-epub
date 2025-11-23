@@ -5,8 +5,8 @@
 //! contains [**expressions**](#expressions) for rendering values and
 //! [**blocks**](#blocks) for controlling logic. These require you to use
 //! specific syntax delimiters in the template. Because `upon` allows you to
-//! configure these delimiters, this document will only refer to the
-//! [**default**][crate::Syntax::default] configuration.
+//! configure these delimiters, this document will only refer to the **default**
+//! configuration.
 //!
 //! # Expressions
 //!
@@ -23,6 +23,12 @@
 //! - Floats: `0.123`, `-3.14`, `5.23e10`
 //! - Strings: `"Hello World!"`, escape characters are supported: `\r`, `\n`,
 //!   `\t`, `\\`, `\"`
+//! - Lists: `[1, 2, 3]`, `[value, "string", 3.14]`
+//! - Maps: `{"a": value, "b": "string", "c": 3.14}`, literal map keys are
+//!   always constant strings
+//!
+//! Both lists and maps can contain any type of value including literals and
+//! [values](#values).
 //!
 //! ## Values
 //!
@@ -31,12 +37,18 @@
 //! into the rendered output.
 //!
 //! ```text
-//! Hello {{ name }}!
+//! Hello {{ .name }}!
 //! ```
 //!
 //! You can access nested fields using a dotted path. The following would first
 //! lookup the field "user" and then lookup the field "name" within it.
 //!
+//! ```text
+//! Hello {{ .user.name }}!
+//! ```
+//!
+//! For convenience, you can also omit the leading dot (`.`) in the first path
+//! member. The following is equivalent to the previous example.
 //! ```text
 //! Hello {{ user.name }}!
 //! ```
@@ -54,21 +66,27 @@
 //!
 //! The dotted path syntax will raise an error when the field or index is not
 //! found. If you want to try lookup a field and return [`Value::None`] when it
-//! is not found then you can use the optional dotted path syntax. The following
-//! would try lookup the field "surname" from "user" and return [`Value::None`]
-//! if it is not found.
+//! is not found then you can use the optional dotted path syntax (`?.`). The
+//! following would try lookup the field "surname" from "user" and return
+//! [`Value::None`] if it is not found.
 //!
 //! ```text
 //! Hello {{ user.name }} {{ user?.surname }}!
+//! ```
+//!
+//! This is useful when checking if the first member of a path might not be
+//! defined.
+//! ```text
+//! {% if ?.user %} ... {% endif %}
 //! ```
 //!
 //! [`Value::None`]: crate::Value::None
 //!
 //! ## Filters
 //!
-//! Filters can be applied to existing expressions using the `|` (pipe)
-//! operator. The simplest filters take no extra arguments and are just
-//! specified by name. For example, assuming a filter called `lower` is
+//! Filters are functions that can be applied to existing expressions using the
+//! `|` (pipe) operator. The simplest filters take no extra arguments and are
+//! just specified by name. For example, assuming a function called `lower` is
 //! registered in the engine the following would produce an expression with the
 //! `user.name` value transformed to lowercase.
 //!
@@ -84,8 +102,31 @@
 //! {{ page.path | append: ".html" }}
 //! ```
 //!
-//! See the [`filters`][crate::filters] module documentation for more
+//! See the [`functions`][crate::functions] module documentation for more
 //! information on filters.
+//!
+//! ## Functions
+//!
+//! Functions can also be called with the `name(args...)` syntax. This allows
+//! you to use functions in other contexts like arguments to other functions or
+//! at the start of an expression. For example, assuming a function called
+//! `now` is registered in the engine, the following would produce an expression
+//! with the current date and time.
+//!
+//! ```html
+//! {{ now() }}
+//! ```
+//!
+//! Functions can also take arguments which must be a sequence of comma
+//! separated values, literals, or function calls. In the following we call a
+//! function `add` with two arguments.
+//!
+//! ```html
+//! {{ add(1, 2) }}
+//! ```
+//!
+//! See the [`functions`][crate::functions] module documentation for more
+//! information on functions.
 //!
 //! # Blocks
 //!

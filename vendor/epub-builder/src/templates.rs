@@ -9,7 +9,7 @@ pub static CONTAINER: &[u8] = include_bytes!("../templates/container.xml");
 
 static ENGINE: Lazy<::upon::Engine> = Lazy::new(|| {
     let mut engine = ::upon::Engine::new();
-    engine.add_filter("eq", str::eq);
+    engine.add_function::<&str, _, bool, (String, String)>("eq", |a, b| a == b);
     engine
 });
 

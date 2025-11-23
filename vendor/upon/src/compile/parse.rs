@@ -7,9 +7,9 @@ use crate::{Engine, Error, Result, Value};
 
 /// A parser that constructs an AST from a token stream.
 ///
-/// The parser is implemented as a simple hand written parser with no recursion.
-/// It sometimes needs to peek at the next token to know how to proceed and uses
-/// the `peeked` buffer to do this.
+/// The parser is implemented as a simple hand written parser. It sometimes
+/// needs to peek at the next token to know how to proceed and uses the `peeked`
+/// buffer to do this.
 pub struct Parser<'engine, 'source> {
     /// A lexer that tokenizes the template source.
     tokens: Lexer<'engine, 'source>,
@@ -126,8 +126,8 @@ impl<'engine, 'source> Parser<'engine, 'source> {
                 (Token::BeginExpr, begin) => {
                     let expr = self.parse_expr()?;
                     let end = self.expect(Token::EndExpr)?;
-                    let span = begin.combine(end);
-                    ast::Stmt::InlineExpr(ast::InlineExpr { expr, span })
+                    let _span = begin.combine(end);
+                    ast::Stmt::InlineExpr(ast::InlineExpr { expr, _span })
                 }
 
                 // The start of a block, e.g. `{% if cond %}`
@@ -403,9 +403,7 @@ impl<'engine, 'source> Parser<'engine, 'source> {
             }
             Keyword::EndWith => Ok(Block::EndWith),
             Keyword::Include => {
-                let span = self.expect(Token::String)?;
-                let name = self.parse_string(span)?;
-                let name = ast::String { name, span };
+                let name = self.parse_string()?;
                 let globals = if self.is_next_keyword(Keyword::With)? {
                     self.expect_keyword(Keyword::With)?;
                     Some(self.parse_expr()?)
@@ -437,7 +435,7 @@ impl<'engine, 'source> Parser<'engine, 'source> {
 
     /// Parses an expression.
     ///
-    /// This is a variable with zero or more function calls. For example:
+    /// This is a base expression with zero or more function calls. For example:
     ///
     ///   user.name | lower | prefix: "Mr. "
     ///
@@ -454,10 +452,11 @@ impl<'engine, 'source> Parser<'engine, 'source> {
             } else {
                 (None, expr.span().combine(name.span))
             };
-            expr = ast::Expr::Call(ast::Call {
+            let receiver = Box::new(expr);
+            expr = ast::Expr::Filter(ast::Filter {
                 name,
                 args,
-                receiver: Box::new(expr),
+                receiver,
                 span,
             });
         }
@@ -485,20 +484,21 @@ impl<'engine, 'source> Parser<'engine, 'source> {
 
             (Token::Minus, sign) => {
                 let span = self.expect(Token::Number)?;
-                let lit =
-                    self.parse_literal_number(&self.source()[span], sign.combine(span), Sign::Neg)?;
+                let raw = &self.source()[span];
+                let lit = self.parse_literal_number(Sign::Neg, sign.combine(span), raw)?;
                 ast::BaseExpr::Literal(lit)
             }
 
             (Token::Plus, sign) => {
                 let span = self.expect(Token::Number)?;
-                let lit =
-                    self.parse_literal_number(&self.source()[span], sign.combine(span), Sign::Pos)?;
+                let raw = &self.source()[span];
+                let lit = self.parse_literal_number(Sign::Pos, sign.combine(span), raw)?;
                 ast::BaseExpr::Literal(lit)
             }
 
             (Token::Number, span) => {
-                let lit = self.parse_literal_number(&self.source()[span], span, Sign::Pos)?;
+                let raw = &self.source()[span];
+                let lit = self.parse_literal_number(Sign::Pos, span, raw)?;
                 ast::BaseExpr::Literal(lit)
             }
 
@@ -507,20 +507,87 @@ impl<'engine, 'source> Parser<'engine, 'source> {
                 ast::BaseExpr::Literal(lit)
             }
 
-            (Token::Ident, span) => {
+            (Token::Dot, span) => {
+                let access = self.parse_access()?;
                 let first = ast::Member {
                     op: ast::AccessOp::Direct,
-                    access: ast::Access::Key(ast::Ident { span }),
-                    span,
+                    access,
+                    span: span.combine(access.span()),
                 };
                 let var = self.parse_var(first)?;
                 ast::BaseExpr::Var(var)
             }
+
+            (Token::QuestionDot, span) => {
+                let access = self.parse_access()?;
+                let first = ast::Member {
+                    op: ast::AccessOp::Optional,
+                    access,
+                    span: span.combine(access.span()),
+                };
+                let var = self.parse_var(first)?;
+                ast::BaseExpr::Var(var)
+            }
+
+            (Token::Ident, span) => {
+                if let Some((Token::OpenParen, _)) = self.peek()? {
+                    let call = self.parse_call(span)?;
+                    ast::BaseExpr::Call(call)
+                } else {
+                    let first = ast::Member {
+                        op: ast::AccessOp::Direct,
+                        access: ast::Access::Key(ast::Ident { span }),
+                        span,
+                    };
+                    let var = self.parse_var(first)?;
+                    ast::BaseExpr::Var(var)
+                }
+            }
+
+            (Token::OpenBracket, span) => {
+                let list = self.parse_list(span)?;
+                ast::BaseExpr::List(list)
+            }
+
+            (Token::OpenBrace, span) => {
+                let map = self.parse_map(span)?;
+                ast::BaseExpr::Map(map)
+            }
+
+            (Token::OpenParen, span) => {
+                let expr = self.parse_expr()?;
+                let end = self.expect(Token::CloseParen)?;
+                let span = span.combine(end);
+                ast::BaseExpr::Paren(ast::Paren {
+                    expr: Box::new(expr),
+                    span,
+                })
+            }
+
             (tk, span) => {
                 return Err(self.err_unexpected_token("expression", tk, span));
             }
         };
         Ok(expr)
+    }
+
+    /// Parses a function call.
+    ///
+    ///    name()
+    ///
+    ///    name("nested", arg, user?.age)
+    ///
+    fn parse_call(&mut self, span: Span) -> Result<ast::Call> {
+        self.expect(Token::OpenParen)?;
+        let name = ast::Ident { span };
+        let args = if self.is_next(Token::CloseParen)? {
+            None
+        } else {
+            Some(self.parse_args(span)?)
+        };
+        let end = self.expect(Token::CloseParen)?;
+        let span = span.combine(end);
+        Ok(ast::Call { name, args, span })
     }
 
     /// Parses a variable specification.
@@ -562,7 +629,7 @@ impl<'engine, 'source> Parser<'engine, 'source> {
 
     /// Parses a type of member access.
     ///
-    /// This is a path segment which is either an index or an identifier.
+    /// This is a path member which is either an index or an identifier.
     ///
     ///   users
     ///
@@ -593,7 +660,7 @@ impl<'engine, 'source> Parser<'engine, 'source> {
         }
     }
 
-    /// Parses filter arguments.
+    /// Parses function arguments.
     ///
     /// This is just a comma separate list of base expressions. For example
     ///
@@ -646,15 +713,10 @@ impl<'engine, 'source> Parser<'engine, 'source> {
     }
 
     /// Parses an integer or a float.
-    fn parse_literal_number(
-        &self,
-        raw: &'source str,
-        span: Span,
-        sign: Sign,
-    ) -> Result<ast::Literal> {
-        match self.parse_literal_integer(raw, span, sign) {
+    fn parse_literal_number(&self, sign: Sign, span: Span, raw: &str) -> Result<ast::Literal> {
+        match self.parse_literal_integer(sign, span, raw) {
             Ok(lit) => Ok(lit),
-            Err(err) => match self.parse_literal_float(raw, span, sign) {
+            Err(err) => match self.parse_literal_float(sign, span, raw) {
                 Ok(lit) => Ok(lit),
                 Err(err2) => {
                     if raw.contains(['.', '-', '+']) {
@@ -667,8 +729,8 @@ impl<'engine, 'source> Parser<'engine, 'source> {
         }
     }
 
-    /// Parse an integer.
-    fn parse_literal_integer(&self, raw: &str, span: Span, sign: Sign) -> Result<ast::Literal> {
+    /// Parse a literal integer.
+    fn parse_literal_integer(&self, sign: Sign, span: Span, raw: &str) -> Result<ast::Literal> {
         let digits = raw.as_bytes();
         let (i, radix) = match digits {
             [b'0', b'b', ..] => (2, 2),
@@ -707,8 +769,8 @@ impl<'engine, 'source> Parser<'engine, 'source> {
         Ok(ast::Literal { value, span })
     }
 
-    /// Parses a float.
-    fn parse_literal_float(&self, raw: &str, span: Span, sign: Sign) -> Result<ast::Literal> {
+    /// Parses a literal float.
+    fn parse_literal_float(&self, sign: Sign, span: Span, raw: &str) -> Result<ast::Literal> {
         let float: f64 = raw
             .parse()
             .map_err(|_| Error::syntax("invalid float literal", self.source(), span))?;
@@ -719,14 +781,21 @@ impl<'engine, 'source> Parser<'engine, 'source> {
         Ok(ast::Literal { value, span })
     }
 
-    /// Parses a string.
+    /// Parses a literal string.
     fn parse_literal_string(&self, span: Span) -> Result<ast::Literal> {
-        let value = Value::String(self.parse_string(span)?);
+        let value = Value::String(self.parse_quoted_string(span)?);
         Ok(ast::Literal { value, span })
     }
 
-    /// Parses a string and handles escape characters.
-    fn parse_string(&self, span: Span) -> Result<String> {
+    /// Parses a string.
+    fn parse_string(&mut self) -> Result<ast::String> {
+        let span = self.expect(Token::String)?;
+        let value = self.parse_quoted_string(span)?;
+        Ok(ast::String { value, span })
+    }
+
+    /// Parses a quoted string and handles escape characters.
+    fn parse_quoted_string(&self, span: Span) -> Result<String> {
         let raw = &self.source()[span];
         let string = if raw.contains('\\') {
             let mut iter = raw.char_indices().map(|(i, c)| (span.m + i, c));
@@ -758,9 +827,47 @@ impl<'engine, 'source> Parser<'engine, 'source> {
             }
             string
         } else {
-            raw[1..raw.len() - 1].to_owned()
+            String::from(&raw[1..raw.len() - 1])
         };
         Ok(string)
+    }
+
+    /// Parses a list.
+    fn parse_list(&mut self, span: Span) -> Result<ast::List> {
+        let mut items = Vec::new();
+        loop {
+            if self.is_next(Token::CloseBracket)? {
+                break;
+            }
+            let item = self.parse_base_expr()?;
+            items.push(item);
+            if !self.is_next(Token::Comma)? {
+                break;
+            }
+            self.expect(Token::Comma)?;
+        }
+        let span = span.combine(self.expect(Token::CloseBracket)?);
+        Ok(ast::List { items, span })
+    }
+
+    /// Parses a map.
+    fn parse_map(&mut self, span: Span) -> Result<ast::Map> {
+        let mut items = Vec::new();
+        loop {
+            if self.is_next(Token::CloseBrace)? {
+                break;
+            }
+            let key = self.parse_string()?;
+            self.expect(Token::Colon)?;
+            let value = self.parse_base_expr()?;
+            items.push((key, value));
+            if !self.is_next(Token::Comma)? {
+                break;
+            }
+            self.expect(Token::Comma)?;
+        }
+        let span = span.combine(self.expect(Token::CloseBrace)?);
+        Ok(ast::Map { items, span })
     }
 
     /// Expects the given keyword.

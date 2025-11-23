@@ -1,10 +1,14 @@
 ChangeLog
 ==========
 
+0.8.1 (2025-11-22)
+=======================
+* Add support for Epub v3.3 metadata (catouc)
+
 0.8.0 (2025-02-03)
 ==================
-* Use `upon` instead of `eyre`
-* Add a way to change epub direction
+* Change error handling (ololduck)
+* Add a way to change epub direction (duyk471)
 
 0.7.4 (2023-10-05)
 ======================

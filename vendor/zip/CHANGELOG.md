@@ -1,5 +1,187 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [5.1.1](https://github.com/zip-rs/zip2/compare/v5.1.0...v5.1.1) - 2025-09-11
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- panic when reading empty extended-timestamp field ([#404](https://github.com/zip-rs/zip2/pull/404)) ([#422](https://github.com/zip-rs/zip2/pull/422))
+- Restore original file timestamp when unzipping with `chrono` ([#46](https://github.com/zip-rs/zip2/pull/46))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Configure Amazon Q rules ([#421](https://github.com/zip-rs/zip2/pull/421))
+
+## [5.1.0](https://github.com/zip-rs/zip2/compare/v5.0.1...v5.1.0) - 2025-09-10
+
+### <!-- 0 -->🚀 Features
+
+- Add legacy shrink/reduce/implode compression ([#303](https://github.com/zip-rs/zip2/pull/303))
+
+## [5.0.1](https://github.com/zip-rs/zip2/compare/v5.0.0...v5.0.1) - 2025-09-09
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- AES metadata was not copied correctly in raw copy methods, which could corrupt the copied file. ([#417](https://github.com/zip-rs/zip2/pull/417))
+
+## [5.0.0](https://github.com/zip-rs/zip2/compare/v4.6.1...v5.0.0) - 2025-09-05
+
+### <!-- 0 -->🚀 Features
+
+- Implement by_path*() methods on ZipArchive ([#382](https://github.com/zip-rs/zip2/pull/382))
+
+## [4.6.1](https://github.com/zip-rs/zip2/compare/v4.6.0...v4.6.1) - 2025-09-03
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Fixes an issue introduced by the swap from `lzma-rs` to `liblzma` ([#407](https://github.com/zip-rs/zip2/pull/407))
+
+## [4.6.0](https://github.com/zip-rs/zip2/compare/v4.5.0...v4.6.0) - 2025-08-30
+
+### <!-- 0 -->🚀 Features
+
+- Allow to read zip files with unsupported extended timestamps ([#400](https://github.com/zip-rs/zip2/pull/400))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- enable clamp_opt for ppmd and xz ([#401](https://github.com/zip-rs/zip2/pull/401))
+
+## [4.5.0](https://github.com/zip-rs/zip2/compare/v4.4.0...v4.5.0) - 2025-08-21
+
+### <!-- 0 -->🚀 Features
+
+- Allow reading ZIP files where the central directory comes *before* the files ([#384](https://github.com/zip-rs/zip2/pull/384)) ([#396](https://github.com/zip-rs/zip2/pull/396))
+
+## [4.4.0](https://github.com/zip-rs/zip2/compare/v4.3.0...v4.4.0) - 2025-08-21
+
+### <!-- 0 -->🚀 Features
+
+- Add `lzma-static` and `xz-static` features that enable `liblzma/static` ([#393](https://github.com/zip-rs/zip2/pull/393))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Move deprecated annotations to fix a Clippy warning ([#391](https://github.com/zip-rs/zip2/pull/391))
+## [4.3.0](https://github.com/zip-rs/zip2/compare/v4.2.0...v4.3.0) - 2025-07-09
+
+### <!-- 0 -->🚀 Features
+
+- Add support for PPMd ([#370](https://github.com/zip-rs/zip2/pull/370))
+
+## [4.2.0](https://github.com/zip-rs/zip2/compare/v4.1.0...v4.2.0) - 2025-06-21
+
+### <!-- 0 -->🚀 Features
+
+- Write ZIP file to stream ([#246](https://github.com/zip-rs/zip2/pull/246))
+
+## [4.1.0](https://github.com/zip-rs/zip2/compare/v4.0.0...v4.1.0) - 2025-06-14
+
+### <!-- 0 -->🚀 Features
+
+- Add has_overlapping_files method
+
+## [4.0.0](https://github.com/zip-rs/zip2/compare/v3.0.0...v4.0.0) - 2025-05-21
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- Allow extraction of Zip64 where "Version needed to extract" is higher than "Version made by" ([#356](https://github.com/zip-rs/zip2/pull/356))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Revert nt-time upgrade (would increase MSRV)
+- Revert constant_time_eq update (would increase MSRV)
+- Update fully-qualified names of liblzma imports
+
+## [3.0.0](https://github.com/zip-rs/zip2/compare/v2.6.1...v3.0.0) - 2025-05-14
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- return correct offset in SeekableTake::seek ([#342](https://github.com/zip-rs/zip2/pull/342))
+- When only zopfli is available, decompression of deflate should not be possible ([#348](https://github.com/zip-rs/zip2/pull/348))
+- Specify `flate2` dependency of the `deflate-flate2` feature. ([#345](https://github.com/zip-rs/zip2/pull/345))
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- drop unused crossbeam-utils dependency ([#339](https://github.com/zip-rs/zip2/pull/339))
+- fix typo
+- remove `deflate-flate2` dependency on specific backend
+- [**breaking**] Drop deprecated `deflate-miniz` feature flag ([#351](https://github.com/zip-rs/zip2/pull/351))
+
+## [2.6.1](https://github.com/zip-rs/zip2/compare/v2.6.0...v2.6.1) - 2025-04-03
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- avoid scanning through all local file headers while opening an archive ([#281](https://github.com/zip-rs/zip2/pull/281))
+
+## [2.5.0](https://github.com/zip-rs/zip2/compare/v2.4.2...v2.5.0) - 2025-03-23
+
+### <!-- 0 -->🚀 Features
+
+- Add support for `time::PrimitiveDateTime` ([#322](https://github.com/zip-rs/zip2/pull/322))
+- Add `jiff` integration ([#323](https://github.com/zip-rs/zip2/pull/323))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- improve error message for duplicated file ([#277](https://github.com/zip-rs/zip2/pull/277))
+
+## [2.4.2](https://github.com/zip-rs/zip2/compare/v2.4.1...v2.4.2) - 2025-03-18
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- `deep_copy_file` produced a mangled file header on big-endian platforms (#309)
+
+## [2.4.1](https://github.com/zip-rs/zip2/compare/v2.4.0...v2.4.1) - 2025-03-17
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- type issue in test
+- double as_ref().canonicalize()?
+- CI failures
+- Create directory for extraction if necessary ([#314](https://github.com/zip-rs/zip2/pull/314))
+
+## [2.4.0](https://github.com/zip-rs/zip2/compare/v2.3.0...v2.4.0) - 2025-03-17
+
+### <!-- 0 -->🚀 Features
+
+- `ZipArchive::root_dir` and `ZipArchive::extract_unwrapped_root_dir` ([#304](https://github.com/zip-rs/zip2/pull/304))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- wasm build failure due to a missing use statement  ([#313](https://github.com/zip-rs/zip2/pull/313))
+
+## [2.3.0](https://github.com/zip-rs/zip2/compare/v2.2.3...v2.3.0) - 2025-03-16
+
+### <!-- 0 -->🚀 Features
+
+- Add support for NTFS extra field ([#279](https://github.com/zip-rs/zip2/pull/279))
+
+### <!-- 1 -->🐛 Bug Fixes
+
+- *(test)* Conditionalize a zip64 doctest ([#308](https://github.com/zip-rs/zip2/pull/308))
+- fix failing tests, remove symlink loop check
+- Canonicalize output path to avoid false negatives
+- Symlink handling in stream extraction
+- Canonicalize output paths and symlink targets, and ensure they descend from the destination
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Fix clippy and cargo fmt warnings ([#310](https://github.com/zip-rs/zip2/pull/310))
+
+## [2.2.3](https://github.com/zip-rs/zip2/compare/v2.2.2...v2.2.3) - 2025-02-26
+
+### <!-- 2 -->🚜 Refactor
+
+- Change the inner structure of `DateTime` (#267)
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- cargo fix --edition
+
 ## [2.2.2](https://github.com/zip-rs/zip2/compare/v2.2.1...v2.2.2) - 2024-12-16
 
 ### <!-- 1 -->🐛 Bug Fixes

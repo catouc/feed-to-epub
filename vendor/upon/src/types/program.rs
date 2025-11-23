@@ -5,9 +5,6 @@ use std::borrow::Cow;
 
 use crate::types::ast;
 use crate::types::span::Span;
-use crate::Value;
-
-pub const FIXME: usize = !0;
 
 #[cfg_attr(internal_debug, derive(Debug))]
 pub struct Template<'source> {
@@ -27,13 +24,16 @@ pub enum Instr {
     JumpIfFalse(usize),
 
     /// Emit the current expression
-    Emit(Span),
+    Emit,
 
     /// Emit raw template
     EmitRaw(Span),
 
-    /// Apply the filter or value formatter to the current expression and emit
-    EmitWith(ast::Ident, Span),
+    /// Apply the formatter or function to the current expression and emit.
+    ///
+    /// The second value is the number of arguments to pop from the stack
+    /// excluding the value itself.
+    EmitWith(ast::Ident, usize, Span),
 
     /// Start a loop over the current expression
     LoopStart(ast::LoopVars, Span),
@@ -54,18 +54,33 @@ pub enum Instr {
     IncludeWith(ast::String),
 
     /// Lookup a variable and start building an expression
-    ExprStart(ast::Var),
+    ExprStartVar(ast::Var),
 
     /// Start building an expression using a literal
-    ExprStartLit(Value),
+    ExprStartLiteral(ast::Literal),
 
-    /// Apply the filter to the value at the top of the stack
-    Apply(ast::Ident, Span, Option<ast::Args>),
+    /// Start building a list expression
+    ExprStartList(Span),
+
+    /// Start building a map expression
+    ExprStartMap(Span),
+
+    /// Append an item to the current list expression
+    ExprListPush,
+
+    /// Insert an item to the current map expression
+    ExprMapInsert(ast::String),
+
+    /// Apply the function using the value and args on the top of the stack.
+    ///
+    /// The second value is the number of arguments to pop from the stack
+    /// excluding the value itself.
+    Apply(ast::Ident, usize, Span),
 }
 
 #[cfg(not(internal_debug))]
 impl std::fmt::Debug for Template<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("<compiled>")
+        f.debug_struct("Template").finish_non_exhaustive()
     }
 }

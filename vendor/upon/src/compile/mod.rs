@@ -14,8 +14,7 @@ use std::borrow::Cow;
 pub use crate::compile::search::Searcher;
 
 use crate::types::ast;
-use crate::types::program::{Instr, Template, FIXME};
-use crate::types::span::Span;
+use crate::types::program::{Instr, Template};
 use crate::{Engine, Result};
 
 /// Compile a template into a program.
@@ -33,6 +32,12 @@ struct Compiler {
     instrs: Vec<Instr>,
 }
 
+/// A placeholder for a jump instruction.
+///
+/// When used it should always be updated by `update_jump` and shouldn't appear
+/// in the final program.
+const JUMP_PLACEHOLDER: usize = !0;
+
 impl Compiler {
     fn new() -> Self {
         Self { instrs: Vec::new() }
@@ -41,10 +46,8 @@ impl Compiler {
     fn compile_template(mut self, source: Cow<'_, str>, template: ast::Template) -> Template<'_> {
         let ast::Template { scope } = template;
         self.compile_scope(scope);
-        Template {
-            source,
-            instrs: self.instrs,
-        }
+        let Self { instrs } = self;
+        Template { source, instrs }
     }
 
     fn compile_scope(&mut self, scope: ast::Scope) {
@@ -60,9 +63,8 @@ impl Compiler {
             }
 
             ast::Stmt::InlineExpr(ast::InlineExpr { expr, .. }) => {
-                let span = expr.span();
                 self.compile_expr(expr);
-                self.pop_emit_expr(span);
+                self.pop_emit_expr();
             }
 
             ast::Stmt::Include(ast::Include { name, globals }) => match globals {
@@ -85,9 +87,9 @@ impl Compiler {
 
                 // then branch
                 let instr = if not {
-                    Instr::JumpIfTrue(FIXME)
+                    Instr::JumpIfTrue(JUMP_PLACEHOLDER)
                 } else {
-                    Instr::JumpIfFalse(FIXME)
+                    Instr::JumpIfFalse(JUMP_PLACEHOLDER)
                 };
                 let j = self.push(instr);
                 self.compile_scope(then_branch);
@@ -95,7 +97,7 @@ impl Compiler {
                 match else_branch {
                     Some(else_branch) => {
                         // else branch
-                        let j2 = self.push(Instr::Jump(FIXME));
+                        let j2 = self.push(Instr::Jump(JUMP_PLACEHOLDER));
                         self.update_jump(j);
                         self.compile_scope(else_branch);
                         self.update_jump(j2)
@@ -114,7 +116,7 @@ impl Compiler {
                 let span = iterable.span();
                 self.compile_expr(iterable);
                 self.push(Instr::LoopStart(vars, span));
-                let j = self.push(Instr::LoopNext(FIXME));
+                let j = self.push(Instr::LoopNext(JUMP_PLACEHOLDER));
                 self.compile_scope(body);
                 self.push(Instr::Jump(j));
                 self.update_jump(j);
@@ -135,14 +137,24 @@ impl Compiler {
                 self.compile_base_expr(base_expr);
             }
 
-            ast::Expr::Call(ast::Call {
+            ast::Expr::Filter(ast::Filter {
                 name,
                 args,
                 receiver,
                 span,
             }) => {
                 self.compile_expr(*receiver);
-                self.push(Instr::Apply(name, span, args));
+                let arity = match args {
+                    None => 0,
+                    Some(args) => {
+                        let arity = args.values.len();
+                        for arg in args.values {
+                            self.compile_base_expr(arg);
+                        }
+                        arity
+                    }
+                } + 1; // +1 for the receiver
+                self.push(Instr::Apply(name, arity, span));
             }
         }
     }
@@ -150,24 +162,54 @@ impl Compiler {
     fn compile_base_expr(&mut self, base_expr: ast::BaseExpr) {
         match base_expr {
             ast::BaseExpr::Var(var) => {
-                self.push(Instr::ExprStart(var));
+                self.push(Instr::ExprStartVar(var));
             }
-            ast::BaseExpr::Literal(ast::Literal { value, .. }) => {
-                self.push(Instr::ExprStartLit(value));
+            ast::BaseExpr::Literal(literal) => {
+                self.push(Instr::ExprStartLiteral(literal));
+            }
+            ast::BaseExpr::List(list) => {
+                self.push(Instr::ExprStartList(list.span));
+                for item in list.items {
+                    self.compile_base_expr(item);
+                    self.push(Instr::ExprListPush);
+                }
+            }
+            ast::BaseExpr::Map(map) => {
+                self.push(Instr::ExprStartMap(map.span));
+                for (key, value) in map.items {
+                    self.compile_base_expr(value);
+                    self.push(Instr::ExprMapInsert(key));
+                }
+            }
+            ast::BaseExpr::Paren(paren) => {
+                self.compile_expr(*paren.expr);
+            }
+            ast::BaseExpr::Call(ast::Call { name, args, span }) => {
+                let arity = match args {
+                    None => 0,
+                    Some(args) => {
+                        let arity = args.values.len();
+                        for arg in args.values {
+                            self.compile_base_expr(arg);
+                        }
+                        arity
+                    }
+                };
+                self.push(Instr::Apply(name, arity, span));
             }
         }
     }
 
-    fn pop_emit_expr(&mut self, span: Span) {
-        let emit = match self.instrs.last() {
-            Some(Instr::Apply(_, _, None)) => {
+    fn pop_emit_expr(&mut self) {
+        let emit = match self.instrs.last_mut() {
+            Some(Instr::Apply(_, _, _)) => {
                 let instr = self.instrs.pop().unwrap();
                 match instr {
-                    Instr::Apply(ident, _, _) => Instr::EmitWith(ident, span),
+                    Instr::Apply(ident, arity, span) => Instr::EmitWith(ident, arity, span),
                     _ => unreachable!(),
                 }
             }
-            _ => Instr::Emit(span),
+            _ => Instr::Emit,
         };
         self.push(emit);
     }

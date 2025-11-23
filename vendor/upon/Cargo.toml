@@ -11,15 +11,21 @@
 
 [package]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.66"
 name = "upon"
-version = "0.8.1"
+version = "0.10.0"
 authors = ["Ross MacArthur <ross@macarthur.io>"]
+build = false
 include = [
     "src/**/*",
     "LICENSE-*",
     "README.md",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "A simple, powerful template engine with minimal dependencies and configurable delimiters"
 readme = "README.md"
 keywords = [
@@ -39,6 +45,28 @@ rustdoc-args = [
     "docsrs",
 ]
 
+[features]
+default = [
+    "functions",
+    "serde",
+    "unicode",
+]
+functions = []
+serde = ["dep:serde"]
+syntax = ["dep:aho-corasick"]
+unicode = [
+    "dep:unicode-ident",
+    "dep:unicode-width",
+]
+
+[lib]
+name = "upon"
+path = "src/lib.rs"
+
+[dependencies.aho-corasick]
+version = "1.1.2"
+optional = true
+
 [dependencies.serde]
 version = "1.0.137"
 optional = true
@@ -48,22 +76,14 @@ version = "1.0.5"
 optional = true
 
 [dependencies.unicode-width]
-version = "0.1.9"
+version = "0.2.0"
 optional = true
 
 [dev-dependencies.serde]
 version = "1.0.137"
 features = ["derive"]
 
-[features]
-default = [
-    "filters",
-    "serde",
-    "unicode",
-]
-filters = []
-serde = ["dep:serde"]
-unicode = [
-    "dep:unicode-ident",
-    "dep:unicode-width",
-]
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(internal_debug)"]

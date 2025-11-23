@@ -9,6 +9,7 @@ use crate::ReferenceType;
 use crate::Result;
 use crate::{common, EpubContent};
 
+use core::fmt::Debug;
 use std::io;
 use std::io::Read;
 use std::path::Path;
@@ -25,19 +26,149 @@ pub enum EpubVersion {
     V20,
     /// EPUB 3.0.1 format
     V30,
+    /// EPUB 3.3.0 format
+    V33,
 }
 
-/// The page-progression-direction attribute of spine is a global attribute and
-/// therefore defines the pagination flow of the book as a whole.
-#[derive(Debug, Copy, Clone, Default)]
-pub enum PageDirection {
-    /// Left to right
-    #[default]
-    Ltr,
-    /// Right to left
-    Rtl,
+pub trait MetadataRenderer {
+    fn render_opf(&self, escape_html: bool) -> String;
 }
 
+impl Debug for dyn MetadataRenderer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "MetadataRenderer{{{}}}", self.render_opf(true))
+    }
+}
+
+/// Represents the EPUB `<meta>` content inside `content.opf` file.
+///
+/// <meta dir="" id="" property="" refines="" scheme="" xml:lang="">content</meta>
+/// https://www.w3.org/TR/epub-33/#sec-meta-elem
+#[derive(Debug)]
+pub struct MetadataOpfV3 {
+    /// The property attribute takes a property data type value that defines the statement
+    /// made in the expression, and the text content of the element represents the assertion. 
+    /// https://www.w3.org/TR/epub-33/#attrdef-meta-property
+    pub property: String,
+
+    /// The content of the metadata tag very much based on what you put in property
+    pub content: String,
+
+    /// Specifies the base direction [bidi] of the textual content and attribute values
+    /// of the carrying element and its descendants.
+    /// https://www.w3.org/TR/epub-33/#attrdef-dir
+    pub dir: Option<String>,
+
+    /// The ID xml of the element, which MUST be unique within the document scope.
+    /// https://www.w3.org/TR/epub-33/#attrdef-id
+    pub id: Option<String>,
+
+    /// Establishes an association between the current expression and the element or resource
+    /// identified by its value. 
+    /// https://www.w3.org/TR/epub-33/#attrdef-refines
+    pub refines: Option<String>,
+
+    /// The scheme attribute identifies the system or scheme the EPUB creator obtained the
+    /// element's value from.
+    /// https://www.w3.org/TR/epub-33/#attrdef-scheme
+    pub scheme: Option<String>,
+
+    /// Specifies the language of the textual content and attribute values of the
+    /// carrying element and its descendants.
+    /// https://www.w3.org/TR/epub-33/#attrdef-xml-lang
+    pub xml_lang: Option<String>,
+}
+
+impl MetadataOpfV3 {
+    /// Create instance of MetadataOpfV3
+    ///
+    pub fn new(property: String, content: String) -> MetadataOpfV3 {
+        MetadataOpfV3{
+            property: property,
+            content: content,
+            dir: None,
+            id: None,
+            refines: None,
+            scheme: None,
+            xml_lang: None,
+        }
+    }
+
+    /// Add reading direction metadata
+    pub fn add_direction(&mut self, direction: String) -> &mut Self {
+        self.dir = Some(direction);
+        self
+    }
+
+    /// Add id metadata
+    pub fn add_id(&mut self, id: String) -> &mut Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Add refines metadata
+    pub fn add_refines(&mut self, refines: String) -> &mut Self {
+        self.id = Some(refines);
+        self
+    }
+
+    /// Add scheme metadata
+    pub fn add_scheme(&mut self, scheme: String) -> &mut Self {
+        self.scheme = Some(scheme);
+        self
+    }
+
+    /// Add xml_lang metadata
+    pub fn add_xml_lang(&mut self, xml_lang: String) -> &mut Self {
+        self.xml_lang = Some(xml_lang);
+        self
+    }
+}
+
+impl MetadataRenderer for MetadataOpfV3 {
+    /// Create instance of MetadataOpfV3
+    fn render_opf(&self, escape_html: bool) -> String {
+        let mut meta_tag = String::from("<meta ");
+
+        if let Some(dir) = &self.dir {
+            meta_tag.push_str(&format!(
+                    "dir=\"{}\" ", common::encode_html(dir, escape_html),
+            ));
+        }
+
+        if let Some(id) = &self.id {
+            meta_tag.push_str(&format!(
+                    "id=\"{}\" ", common::encode_html(id, escape_html),
+            ));
+        }
+
+        if let Some(refines) = &self.refines {
+            meta_tag.push_str(&format!(
+                    "refines=\"{}\" ", common::encode_html(refines, escape_html)
+            ));
+        }
+
+        if let Some(scheme) = &self.scheme {
+            meta_tag.push_str(&format!(
+                    "scheme=\"{}\" ", common::encode_html(scheme, escape_html),
+            ));
+        }
+
+        if let Some(xml_lang) = &self.xml_lang {
+            meta_tag.push_str(&format!(
+                    "xml:lang=\"{}\" ", common::encode_html(xml_lang, escape_html) 
+            ));
+        }
+
+        meta_tag.push_str(&format!(
+                "property=\"{}\">{}</meta>",
+                common::encode_html(&self.property, escape_html),
+                &self.content,
+        ));
+
+        meta_tag
+    }
+}
 
 /// Represents the EPUB `<meta>` content inside `content.opf` file.
 ///
@@ -58,6 +189,27 @@ impl MetadataOpf {
     pub fn new(&self, meta_name: String, meta_content: String) -> Self {
         Self { name: meta_name, content: meta_content }
     }
+}
+
+impl MetadataRenderer for MetadataOpf {
+    fn render_opf(&self, escape_html: bool) -> String {
+        format!(
+            "<meta name=\"{}\" content=\"{}\"/>", 
+            common::encode_html(&self.name, escape_html),
+            common::encode_html(&self.content, escape_html),
+        )
+    }
+}
+
+/// The page-progression-direction attribute of spine is a global attribute and
+/// therefore defines the pagination flow of the book as a whole.
+#[derive(Debug, Copy, Clone, Default)]
+pub enum PageDirection {
+    /// Left to right
+    #[default]
+    Ltr,
+    /// Right to left
+    Rtl,
 }
 
 impl ToString for PageDirection {
@@ -175,7 +327,7 @@ pub struct EpubBuilder<Z: Zip> {
     stylesheet: bool,
     inline_toc: bool,
     escape_html: bool,
-    meta_opf: Vec<MetadataOpf>
+    meta_opf: Vec<Box<dyn MetadataRenderer>>,
 }
 
 impl<Z: Zip> EpubBuilder<Z> {
@@ -191,7 +343,7 @@ impl<Z: Zip> EpubBuilder<Z> {
             stylesheet: false,
             inline_toc: false,
             escape_html: true,
-            meta_opf: Vec::new()
+            meta_opf: vec![],
         };
 
         epub.zip
@@ -210,6 +362,7 @@ impl<Z: Zip> EpubBuilder<Z> {
     ///
     /// * `V20`: EPUB 2.0.1
     /// * 'V30`: EPUB 3.0.1
+    /// * 'V33`: EPUB 3.3
     pub fn epub_version(&mut self, version: EpubVersion) -> &mut Self {
         self.version = version;
         self
@@ -226,7 +379,6 @@ impl<Z: Zip> EpubBuilder<Z> {
         self
     }
     
-
     /// Add custom <meta> to `content.opf`
     /// Syntax: `self.add_metadata_opf(name, content)`
     /// 
@@ -237,15 +389,23 @@ impl<Z: Zip> EpubBuilder<Z> {
     /// use epub_builder::EpubBuilder;
     /// use epub_builder::ZipCommand;
     /// use epub_builder::MetadataOpf;
+    /// use epub_builder::MetadataOpfV3;
     /// let mut builder = EpubBuilder::new(ZipCommand::new().unwrap()).unwrap();
-
-    /// builder.add_metadata_opf(MetadataOpf {
-    ///     name: String::from("primary-writing-mode"),
-    ///     content: String::from("vertical-rl")
-    /// });
+    ///
+    /// builder.add_metadata_opf(Box::new(MetadataOpf{
+    ///         name: String::from("dcterms:modified"),
+    ///         content: String::from("2016-02-29T12:34:56Z")
+    ///     }
+    /// ));
+    ///
+    /// builder.add_metadata_opf(Box::new(MetadataOpfV3::new(
+    ///         String::from("dcterms:modified"),
+    ///         String::from("2016-02-29T12:34:56Z")
+    /// )));
+    ///
     /// ```
     /// 
-    pub fn add_metadata_opf(&mut self, item: MetadataOpf) -> &mut Self {
+    pub fn add_metadata_opf(&mut self, item: Box<dyn MetadataRenderer>) -> &mut Self {
         self.meta_opf.push(item);
         self
     }
@@ -612,12 +772,9 @@ impl<Z: Zip> EpubBuilder<Z> {
                 common::encode_html(rights, self.escape_html),
             ));
         }
-        for meta in &self.meta_opf{
-            optional.push(format!(
-                "<meta name=\"{}\" content=\"{}\"/>", 
-                common::encode_html(&meta.name, self.escape_html),
-                common::encode_html(&meta.content, self.escape_html),
-            ));
+
+        for meta in &self.meta_opf {
+            optional.push(meta.render_opf(self.escape_html))
         }
 
         let date_modified = self
@@ -644,6 +801,7 @@ impl<Z: Zip> EpubBuilder<Z> {
             };
             let properties = match (self.version, content.cover) {
                 (EpubVersion::V30, true) => "properties=\"cover-image\" ",
+                (EpubVersion::V33, true) => "properties=\"cover-image\" ",
                 _ => "",
             };
             if content.cover {
@@ -728,6 +886,7 @@ impl<Z: Zip> EpubBuilder<Z> {
         match self.version {
             EpubVersion::V20 => templates::v2::CONTENT_OPF.render(&Engine::new(), &data).to_writer(&mut res),
             EpubVersion::V30 => templates::v3::CONTENT_OPF.render(&Engine::new(), &data).to_writer(&mut res),
+            EpubVersion::V33 => templates::v3::CONTENT_OPF.render(&Engine::new(), &data).to_writer(&mut res),
         }
         .map_err(|e| crate::Error::TemplateError {
             msg: "could not render template for content.opf".to_string(),
@@ -820,6 +979,7 @@ impl<Z: Zip> EpubBuilder<Z> {
         match self.version {
             EpubVersion::V20 => templates::v2::NAV_XHTML.render(&Engine::new(), &data).to_writer(&mut res),
             EpubVersion::V30 => templates::v3::NAV_XHTML.render(&Engine::new(), &data).to_writer(&mut res),
+            EpubVersion::V33 => templates::v3::NAV_XHTML.render(&Engine::new(), &data).to_writer(&mut res),
         }
         .map_err(|e| crate::Error::TemplateError {
             msg: "error rendering nav.xhtml template".to_string(),

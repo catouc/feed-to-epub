@@ -1,4 +1,4 @@
-use epub_builder::{EpubBuilder, EpubContent, MetadataOpf, ZipLibrary};
+use epub_builder::{EpubBuilder, EpubContent, EpubVersion, MetadataOpf, MetadataOpfV3, ZipLibrary};
 use std::fs::File;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -23,11 +23,12 @@ pub fn entry_to_epub(
 
     let mut epub_builder = EpubBuilder::new(ZipLibrary::new()?)?;
     epub_builder
+        .epub_version(EpubVersion::V33)
         .metadata("generator", "feed-to-epub")?
-        .add_metadata_opf(MetadataOpf {
-            name: "calibre:series".into(),
-            content: feed_name.into(),
-        });
+        .add_metadata_opf(Box::new(MetadataOpfV3::new(
+            "belongs-to-collection".into(),
+            feed_name.into(),
+        )));
 
     if let Some(published_date) = &entry.published {
         epub_builder.set_publication_date(*published_date);
@@ -46,10 +47,10 @@ pub fn entry_to_epub(
 
     let _ = &entry.authors.iter().map(|author| {
         epub_builder
-            .add_metadata_opf(MetadataOpf {
+            .add_metadata_opf(Box::new(MetadataOpf {
                 name: "dc:creator".into(),
                 content: author.name.clone(),
-            })
+            }))
             .add_author(&author.name);
     });
 
@@ -66,7 +67,7 @@ pub fn entry_to_epub(
                 entry_title_to_file_name(download_dir, &title.content.replace('/', "_"));
             File::create(file_name)?
         }
-        None => {
+        _ => {
             return Err(Error::ContentExtractionError(
                 crate::storage::EntryConversionError::TitleExtractionError,
             ))
@@ -79,7 +80,7 @@ pub fn entry_to_epub(
                 .metadata("title", &title.content)?
                 .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))?;
         }
-        None => {
+        _ => {
             return Err(Error::ContentExtractionError(
                 crate::storage::EntryConversionError::TitleExtractionError,
             ))

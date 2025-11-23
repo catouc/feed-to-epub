@@ -10,11 +10,12 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
+edition = "2024"
 name = "epub-builder"
-version = "0.8.0"
+version = "0.8.1"
 authors = ["Lizzie Crowdagger <lizzie@crowdagger.fr>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -25,6 +26,18 @@ readme = "README.md"
 keywords = ["epub"]
 license = "MPL-2.0"
 repository = "https://github.com/lise-henry/epub-builder/"
+
+[features]
+default = [
+    "zip-command",
+    "zip-library",
+]
+tempfile = ["dep:tempfile"]
+zip-command = ["tempfile"]
+zip-library = [
+    "libzip",
+    "libzip/time",
+]
 
 [lib]
 name = "epub_builder"
@@ -43,19 +56,13 @@ name = "procedural"
 path = "examples/procedural.rs"
 
 [dependencies.chrono]
-version = "0.4"
-features = [
-    "clock",
-    "std",
-    "wasmbind",
-]
-default-features = false
+version = "0.4.42"
 
 [dependencies.html-escape]
 version = "0.2"
 
 [dependencies.libzip]
-version = "2.1"
+version = "6.0.0"
 features = ["deflate"]
 optional = true
 default-features = false
@@ -75,7 +82,7 @@ optional = true
 version = "2.0"
 
 [dependencies.upon]
-version = "0.8"
+version = "0.10"
 
 [dependencies.uuid]
 version = "1"
@@ -86,14 +93,3 @@ version = "0.11"
 
 [dev-dependencies.pretty_assertions]
 version = "1"
-
-[features]
-default = [
-    "zip-command",
-    "zip-library",
-]
-zip-command = ["tempfile"]
-zip-library = [
-    "libzip",
-    "libzip/time",
-]

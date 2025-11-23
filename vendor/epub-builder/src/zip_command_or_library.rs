@@ -24,8 +24,8 @@ pub enum ZipCommandOrLibrary {
 impl Zip for ZipCommandOrLibrary {
     fn write_file<P: AsRef<Path>, R: Read>(&mut self, path: P, content: R) -> Result<()> {
         match self {
-            ZipCommandOrLibrary::Command(ref mut command) => command.write_file(path, content),
-            ZipCommandOrLibrary::Library(ref mut library) => library.write_file(path, content),
+            ZipCommandOrLibrary::Command(command) => command.write_file(path, content),
+            ZipCommandOrLibrary::Library(library) => library.write_file(path, content),
         }
     }
 

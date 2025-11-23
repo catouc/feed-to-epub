@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "1.0.96"
 jiff = "0.2.0"
 clap = { version = "4.5.9", features = ["derive"] }
-epub-builder = "0.8.0"
+epub-builder = "0.8.1"
 expanduser = "1.2.2"
 feed-rs = "2.0.0"
 rusqlite = "0.31.0"

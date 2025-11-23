@@ -1,6 +1,6 @@
 use crate::compile::parse::Keyword;
+use crate::types::delimiter::Delimiter;
 use crate::types::span::Span;
-use crate::types::syntax;
 use crate::{Engine, Error, Result};
 
 /// A lexer that tokenizes the template source into distinct chunks so that the
@@ -28,6 +28,9 @@ pub struct Lexer<'engine, 'source> {
 
     /// A buffer to store the next token.
     next: Option<(Token, Span)>,
+
+    /// The stack of brackets within a block.
+    brackets: Vec<(Span, Token)>,
 }
 
 /// The state of the lexer.
@@ -89,6 +92,18 @@ pub enum Token {
     BeginComment,
     /// End block tag, e.g. `#}`
     EndComment,
+    /// `[`
+    OpenBracket,
+    /// `]`
+    CloseBracket,
+    /// `{`
+    OpenBrace,
+    /// `}`
+    CloseBrace,
+    /// `(`
+    OpenParen,
+    /// `)`
+    CloseParen,
     /// `.`
     Dot,
     /// `?.`
@@ -127,6 +142,7 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
             state: State::Template,
             left_trim: false,
             next: None,
+            brackets: Vec::new(),
         }
     }
 
@@ -184,8 +200,8 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
         };
 
         match self.engine.searcher.find_at(self.source, i) {
-            Some((kind, j, k)) => {
-                let (tk, trim) = Token::from_kind(kind);
+            Some((delimiter, j, k)) => {
+                let (tk, trim) = Token::from_delimiter(delimiter);
 
                 if !tk.is_begin_tag() {
                     return Err(self.err_unexpected_token(tk, j..k));
@@ -235,14 +251,18 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
         // for the corresponding end tag `end`.
 
         let (tk, j) = match self.engine.searcher.starts_with(self.source, i) {
-            Some((kind, j)) => {
-                let (tk, trim) = Token::from_kind(kind);
+            Some((delimiter, j)) => {
+                let (tk, trim) = Token::from_delimiter(delimiter);
 
                 if tk.is_begin_tag() {
                     return Err(self.err_unclosed(begin, end));
                 }
                 if tk != end {
                     return Err(self.err_unexpected_token(tk, i..j));
+                }
+                // Check for unclosed brackets.
+                if let Some((open, end)) = self.brackets.pop() {
+                    return Err(self.err_unclosed(open, end));
                 }
 
                 // A matching end tag! Update the state and
@@ -270,6 +290,14 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
                     '+' => (Token::Plus, i + 1),
                     '-' => (Token::Minus, i + 1),
 
+                    // Brackets
+                    '[' => self.lex_open(Token::OpenBracket, i, c),
+                    ']' => self.lex_close(Token::CloseBracket, i, c)?,
+                    '{' => self.lex_open(Token::OpenBrace, i, c),
+                    '}' => self.lex_close(Token::CloseBrace, i, c)?,
+                    '(' => self.lex_open(Token::OpenParen, i, c),
+                    ')' => self.lex_close(Token::CloseParen, i, c)?,
+
                     // Multi-character tokens with a distinct start character.
                     '?' => self.lex_question_dot(iter, i)?,
                     '"' => self.lex_string(iter, i)?,
@@ -289,10 +317,10 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
         };
 
         match (block_state, tk) {
-            (BlockState::Unknown, Token::Ident) => {
+            (BlockState::Unknown, Token::Ident | Token::Dot | Token::QuestionDot) => {
                 self.state = State::BlockPath { begin, end };
             }
-            (BlockState::Path, Token::Pipe | Token::Comma | Token::Colon) => {
+            (BlockState::Path, Token::OpenParen | Token::Pipe | Token::Comma | Token::Colon) => {
                 self.state = State::Block { begin, end };
             }
             _ => {}
@@ -314,8 +342,8 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
         //    i     j k
 
         match self.engine.searcher.find_at(self.source, i) {
-            Some((kind, j, k)) => {
-                let (tk, trim) = Token::from_kind(kind);
+            Some((delimiter, j, k)) => {
+                let (tk, trim) = Token::from_delimiter(delimiter);
 
                 if tk.is_begin_tag() {
                     return Err(self.err_unclosed(begin, end));
@@ -350,6 +378,24 @@ impl<'engine, 'source> Lexer<'engine, 'source> {
                 Ok(Some((Token::Raw, Span::from(i..j))))
             }
         }
+    }
+
+    fn lex_open(&mut self, tk: Token, i: usize, c: char) -> (Token, usize) {
+        let sp = Span::from(i..(i + c.len_utf8()));
+        self.brackets.push((sp, tk.pair()));
+        (tk, i + 1)
+    }
+
+    fn lex_close(&mut self, tk: Token, i: usize, c: char) -> Result<(Token, usize)> {
+        let j = i + c.len_utf8();
+        let (_, close) = self
+            .brackets
+            .pop()
+            .ok_or_else(|| self.err_unexpected_token(tk, i..j))?;
+        if close != tk {
+            return Err(self.err_unexpected_token(tk, i..j));
+        }
+        Ok((tk, j))
     }
 
     fn lex_question_dot<I>(&mut self, mut iter: I, i: usize) -> Result<(Token, usize)>
@@ -464,6 +510,12 @@ impl Token {
             Self::EndBlock => "end block",
             Self::BeginComment => "begin comment",
             Self::EndComment => "end comment",
+            Self::OpenBracket => "open bracket",
+            Self::CloseBracket => "close bracket",
+            Self::OpenBrace => "open brace",
+            Self::CloseBrace => "close brace",
+            Self::OpenParen => "open parenthesis",
+            Self::CloseParen => "close parenthesis",
             Self::Dot => "member access operator",
             Self::QuestionDot => "optional member access operator",
             Self::Pipe => "pipe",
@@ -480,7 +532,7 @@ impl Token {
         }
     }
 
-    /// Returns the corresponding tag if this token is a tag.
+    /// Returns the corresponding tag if this token is a tag or bracket.
     fn pair(&self) -> Self {
         match self {
             Self::BeginExpr => Self::EndExpr,
@@ -489,7 +541,13 @@ impl Token {
             Self::EndBlock => Self::BeginBlock,
             Self::BeginComment => Self::EndComment,
             Self::EndComment => Self::BeginComment,
-            _ => panic!("not a tag"),
+            Self::OpenBracket => Self::CloseBracket,
+            Self::CloseBracket => Self::OpenBracket,
+            Self::OpenBrace => Self::CloseBrace,
+            Self::CloseBrace => Self::OpenBrace,
+            Self::OpenParen => Self::CloseParen,
+            Self::CloseParen => Self::OpenParen,
+            _ => panic!("not a tag or bracket"),
         }
     }
 
@@ -508,26 +566,26 @@ impl Token {
         matches!(self, Self::Whitespace)
     }
 
-    fn from_kind(tk: syntax::Kind) -> (Self, bool) {
-        match tk {
-            syntax::Kind::BeginExpr => (Self::BeginExpr, false),
-            syntax::Kind::EndExpr => (Self::EndExpr, false),
-            syntax::Kind::BeginExprTrim => (Self::BeginExpr, true),
-            syntax::Kind::EndExprTrim => (Self::EndExpr, true),
-            syntax::Kind::BeginBlock => (Self::BeginBlock, false),
-            syntax::Kind::EndBlock => (Self::EndBlock, false),
-            syntax::Kind::BeginBlockTrim => (Self::BeginBlock, true),
-            syntax::Kind::EndBlockTrim => (Self::EndBlock, true),
-            syntax::Kind::BeginComment => (Self::BeginComment, false),
-            syntax::Kind::EndComment => (Self::EndComment, false),
-            syntax::Kind::BeginCommentTrim => (Self::BeginComment, true),
-            syntax::Kind::EndCommentTrim => (Self::EndComment, true),
+    fn from_delimiter(d: Delimiter) -> (Self, bool) {
+        match d {
+            Delimiter::BeginExpr => (Self::BeginExpr, false),
+            Delimiter::EndExpr => (Self::EndExpr, false),
+            Delimiter::BeginExprTrim => (Self::BeginExpr, true),
+            Delimiter::EndExprTrim => (Self::EndExpr, true),
+            Delimiter::BeginBlock => (Self::BeginBlock, false),
+            Delimiter::EndBlock => (Self::EndBlock, false),
+            Delimiter::BeginBlockTrim => (Self::BeginBlock, true),
+            Delimiter::EndBlockTrim => (Self::EndBlock, true),
+            Delimiter::BeginComment => (Self::BeginComment, false),
+            Delimiter::EndComment => (Self::EndComment, false),
+            Delimiter::BeginCommentTrim => (Self::BeginComment, true),
+            Delimiter::EndCommentTrim => (Self::EndComment, true),
         }
     }
 }
 
 fn is_whitespace(c: char) -> bool {
-    matches!(c, '\t' | ' ')
+    matches!(c, '\t' | ' ' | '\r' | '\n')
 }
 
 #[cfg(feature = "unicode")]
@@ -580,6 +638,15 @@ mod tests {
         assert_eq!(
             tokens,
             [(Token::Raw, "lorem ipsum "), (Token::BeginExpr, "{{"),]
+        );
+    }
+
+    #[test]
+    fn lex_begin_expr_trickery() {
+        let tokens = lex("lorem { ipsum {{").unwrap();
+        assert_eq!(
+            tokens,
+            [(Token::Raw, "lorem { ipsum "), (Token::BeginExpr, "{{"),]
         );
     }
 
@@ -653,11 +720,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn lex_expr_multiline() {
+        let tokens = lex("lorem {{\n ipsum }} dolor").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                (Token::Raw, "lorem "),
+                (Token::BeginExpr, "{{"),
+                (Token::Whitespace, "\n "),
+                (Token::Ident, "ipsum"),
+                (Token::Whitespace, " "),
+                (Token::EndExpr, "}}"),
+                (Token::Raw, " dolor")
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_expr_literals() {
+        let tokens = lex("lorem {{ [1, 3] {.} }} dolor").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                (Token::Raw, "lorem "),
+                (Token::BeginExpr, "{{"),
+                (Token::Whitespace, " "),
+                (Token::OpenBracket, "["),
+                (Token::Number, "1"),
+                (Token::Comma, ","),
+                (Token::Whitespace, " "),
+                (Token::Number, "3"),
+                (Token::CloseBracket, "]"),
+                (Token::Whitespace, " "),
+                (Token::OpenBrace, "{"),
+                (Token::Dot, "."),
+                (Token::CloseBrace, "}"),
+                (Token::Whitespace, " "),
+                (Token::EndExpr, "}}"),
+                (Token::Raw, " dolor")
+            ]
+        );
+    }
+
     #[cfg(feature = "unicode")]
     #[test]
     fn lex_expr() {
         let tokens = lex(
-            "lorem ipsum {{ . ?. |\t _aZ_0 привіт :\"hello\\n\" 0.5 0xffee00 }} dolor sit amet",
+            "lorem ipsum {{ . ?. |\t (_aZ_0 привіт) :\"hello\\n\" 0.5 0xffee00 }} dolor sit amet",
         )
         .unwrap();
         assert_eq!(
@@ -672,9 +782,11 @@ mod tests {
                 (Token::Whitespace, " "),
                 (Token::Pipe, "|"),
                 (Token::Whitespace, "\t "),
+                (Token::OpenParen, "("),
                 (Token::Ident, "_aZ_0"),
                 (Token::Whitespace, " "),
                 (Token::Ident, "привіт"),
+                (Token::CloseParen, ")"),
                 (Token::Whitespace, " "),
                 (Token::Colon, ":"),
                 (Token::String, "\"hello\\n\""),
@@ -753,6 +865,40 @@ mod tests {
     }
 
     #[test]
+    fn lex_block_trim() {
+        let tokens = lex("lorem ipsum {%- dolor -%} sit").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                (Token::Raw, "lorem ipsum"),
+                (Token::BeginBlock, "{%-"),
+                (Token::Whitespace, " "),
+                (Token::Ident, "dolor"),
+                (Token::Whitespace, " "),
+                (Token::EndBlock, "-%}"),
+                (Token::Raw, "sit"),
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_block_multiline() {
+        let tokens = lex("lorem {%\n ipsum %} dolor").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                (Token::Raw, "lorem "),
+                (Token::BeginBlock, "{%"),
+                (Token::Whitespace, "\n "),
+                (Token::Ident, "ipsum"),
+                (Token::Whitespace, " "),
+                (Token::EndBlock, "%}"),
+                (Token::Raw, " dolor")
+            ]
+        );
+    }
+
+    #[test]
     fn lex_block_and_expr() {
         let tokens =
             lex("{% if cond %} lorem ipsum {{ path.segment }} dolor sit amet {% end %}").unwrap();
@@ -811,6 +957,21 @@ mod tests {
                 (Token::Raw, "lorem ipsum "),
                 (Token::BeginComment, "{#"),
                 (Token::Raw, " dolor")
+            ]
+        );
+    }
+
+    #[test]
+    fn lex_end_comment() {
+        let tokens = lex("lorem ipsum {# dolor #} sit amet").unwrap();
+        assert_eq!(
+            tokens,
+            [
+                (Token::Raw, "lorem ipsum "),
+                (Token::BeginComment, "{#"),
+                (Token::Raw, " dolor "),
+                (Token::EndComment, "#}"),
+                (Token::Raw, " sit amet"),
             ]
         );
     }

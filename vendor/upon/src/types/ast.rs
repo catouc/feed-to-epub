@@ -2,6 +2,10 @@
 
 use crate::types::span::Span;
 
+// /////////////////////////////////////////////////////////////////////////////
+//  Blocks
+// /////////////////////////////////////////////////////////////////////////////
+
 #[cfg_attr(internal_debug, derive(Debug))]
 pub struct Template {
     pub scope: Scope,
@@ -25,19 +29,13 @@ pub enum Stmt {
 #[cfg_attr(internal_debug, derive(Debug))]
 pub struct InlineExpr {
     pub expr: Expr,
-    pub span: Span,
+    pub _span: Span,
 }
 
 #[cfg_attr(internal_debug, derive(Debug))]
 pub struct Include {
     pub name: String,
     pub globals: Option<Expr>,
-}
-
-#[cfg_attr(internal_debug, derive(Debug))]
-pub struct String {
-    pub name: std::string::String,
-    pub span: Span,
 }
 
 #[cfg_attr(internal_debug, derive(Debug))]
@@ -75,14 +73,24 @@ pub struct With {
     pub body: Scope,
 }
 
+impl Scope {
+    pub const fn new() -> Self {
+        Self { stmts: Vec::new() }
+    }
+}
+
+// /////////////////////////////////////////////////////////////////////////////
+//  Expressions
+// /////////////////////////////////////////////////////////////////////////////
+
 #[cfg_attr(internal_debug, derive(Debug))]
 pub enum Expr {
     Base(BaseExpr),
-    Call(Call),
+    Filter(Filter),
 }
 
 #[cfg_attr(internal_debug, derive(Debug))]
-pub struct Call {
+pub struct Filter {
     pub name: Ident,
     pub args: Option<Args>,
     pub receiver: Box<Expr>,
@@ -90,15 +98,13 @@ pub struct Call {
 }
 
 #[cfg_attr(internal_debug, derive(Debug))]
-pub struct Args {
-    pub values: Vec<BaseExpr>,
-    pub span: Span,
-}
-
-#[cfg_attr(internal_debug, derive(Debug))]
 pub enum BaseExpr {
     Var(Var),
     Literal(Literal),
+    List(List),
+    Map(Map),
+    Paren(Paren),
+    Call(Call),
 }
 
 #[cfg_attr(internal_debug, derive(Debug))]
@@ -145,23 +151,48 @@ pub struct Literal {
     pub span: Span,
 }
 
-impl Scope {
-    pub const fn new() -> Self {
-        Self { stmts: Vec::new() }
-    }
+#[cfg_attr(internal_debug, derive(Debug))]
+pub struct List {
+    pub items: Vec<BaseExpr>,
+    pub span: Span,
 }
 
-impl String {
-    pub fn as_str(&self) -> &str {
-        self.name.as_str()
-    }
+#[cfg_attr(internal_debug, derive(Debug))]
+pub struct Call {
+    pub name: Ident,
+    pub args: Option<Args>,
+    pub span: Span,
+}
+
+#[cfg_attr(internal_debug, derive(Debug))]
+pub struct Args {
+    pub values: Vec<BaseExpr>,
+    pub span: Span,
+}
+
+#[cfg_attr(internal_debug, derive(Debug))]
+pub struct Map {
+    pub items: Vec<(String, BaseExpr)>,
+    pub span: Span,
+}
+
+#[cfg_attr(internal_debug, derive(Debug))]
+pub struct String {
+    pub value: std::string::String,
+    pub span: Span,
+}
+
+#[cfg_attr(internal_debug, derive(Debug))]
+pub struct Paren {
+    pub expr: Box<Expr>,
+    pub span: Span,
 }
 
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
             Self::Base(base) => base.span(),
-            Self::Call(call) => call.span,
+            Self::Filter(call) => call.span,
         }
     }
 }
@@ -171,6 +202,10 @@ impl BaseExpr {
         match self {
             BaseExpr::Var(var) => var.span(),
             BaseExpr::Literal(lit) => lit.span,
+            BaseExpr::List(list) => list.span,
+            BaseExpr::Map(map) => map.span,
+            BaseExpr::Paren(paren) => paren.span,
+            BaseExpr::Call(call) => call.span,
         }
     }
 }
@@ -199,5 +234,11 @@ impl Access {
             Access::Index(key) => key.span,
             Access::Key(key) => key.span,
         }
+    }
+}
+
+impl String {
+    pub fn as_str(&self) -> &str {
+        self.value.as_str()
     }
 }

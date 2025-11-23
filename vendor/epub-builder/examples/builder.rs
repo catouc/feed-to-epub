@@ -5,29 +5,21 @@ use epub_builder::Result;
 use epub_builder::TocElement;
 use epub_builder::ZipLibrary;
 
-use std::env;
-use std::fs::File;
 use std::io;
 use std::io::Write;
 
 // Try to print Zip file to stdout
 fn run() -> Result<()> {
     env_logger::init();
-    // Some dummy content to fill our books
+    // Some dummy content to fill our book
     let dummy_content = r#"<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <body>
-<p>Text of the page<T></p>
+<p>Text of the page</p>
 </body>
 </html>"#;
     let dummy_image = "Not really a PNG image";
     let dummy_css = "body { background-color: pink }";
-
-    // temp file to see epub internals
-    let _curr_dir = env::current_dir().unwrap();
-    let _out_file = _curr_dir.join("temp_epub_file.epub");
-    log::debug!("file to write = {}", &_out_file.display());
-    let _writer = File::create(_out_file).unwrap();
 
     // Create a new EpubBuilder using the zip library
     let mut builder = EpubBuilder::new(ZipLibrary::new()?)?;
@@ -77,7 +69,7 @@ fn run() -> Result<()> {
         .inline_toc();
     // Finally, write the EPUB file to stdout
     builder.generate(&mut io::stdout())?; // generate into stout
-                                          // .generate(&_writer)?; // generate into temp file to see epub internals
+
     log::debug!("dummy book generation is done");
     Ok(())
 }
