@@ -40,12 +40,16 @@ fn main() -> Result<()> {
             };
 
             if let Some(feed_data) = feed_data {
-                feed_data.entries.iter().for_each(|entry| {
-                    match entry_to_epub(feed_name, &feed.download_dir, entry) {
-                        Ok(..) => (),
-                        Err(err) => println!("failed to create epub: {err}"),
-                    }
-                });
+                feed_data
+                    .entries
+                    .iter()
+                    .filter_map(|e| entry_to_epub(feed_name, &feed.download_dir, e).ok())
+                    .for_each(|epub| match std::fs::write(&epub.file_path, &epub.data) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            eprintln!("failed to write epub to {:#?}: {err}", &epub.file_path)
+                        }
+                    });
             }
         }
 

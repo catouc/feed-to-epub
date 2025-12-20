@@ -1,5 +1,4 @@
 use epub_builder::{EpubBuilder, EpubContent, EpubVersion, MetadataOpf, MetadataOpfV3, ZipLibrary};
-use std::fs::File;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -13,11 +12,16 @@ pub enum Error {
     ContentExtractionError(#[from] crate::storage::EntryConversionError),
 }
 
+pub struct EpubFile {
+    pub file_path: PathBuf,
+    pub data: Vec<u8>,
+}
+
 pub fn entry_to_epub(
     feed_name: &str,
     download_dir: &str,
     entry: &feed_rs::model::Entry,
-) -> Result<(), Error> {
+) -> Result<EpubFile, Error> {
     let html = crate::storage::extract_html_string_from_entry(entry)?;
     let xhtml = crate::storage::html_string_to_xhtml_epub_string(&html);
 
@@ -61,12 +65,8 @@ pub fn entry_to_epub(
     //
     // This just leads to my annoyment at Rusts Option
     // unpacking since I have to some weird dances.
-    let epub_file = match &entry.title {
-        Some(title) => {
-            let file_name =
-                entry_title_to_file_name(download_dir, &title.content.replace('/', "_"));
-            File::create(file_name)?
-        }
+    let file_path = match &entry.title {
+        Some(title) => entry_title_to_file_name(download_dir, &title.content.replace('/', "_")),
         _ => {
             return Err(Error::ContentExtractionError(
                 crate::storage::EntryConversionError::TitleExtractionError,
@@ -87,8 +87,9 @@ pub fn entry_to_epub(
         }
     }
 
-    epub_builder.generate(epub_file)?;
-    Ok(())
+    let mut data: Vec<u8> = Vec::new();
+    epub_builder.generate(&mut data)?;
+    Ok(EpubFile { file_path, data })
 }
 
 pub fn entry_title_to_file_name(destination_dir: &str, title: &str) -> PathBuf {
