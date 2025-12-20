@@ -12,6 +12,7 @@ pub enum Error {
     ContentExtractionError(#[from] crate::storage::EntryConversionError),
 }
 
+#[derive(Debug, Default)]
 pub struct EpubFile {
     pub file_path: PathBuf,
     pub data: Vec<u8>,
@@ -33,6 +34,8 @@ pub fn entry_to_epub(
             "belongs-to-collection".into(),
             feed_name.into(),
         )));
+
+    let mut epub_file = EpubFile::default();
 
     if let Some(published_date) = &entry.published {
         epub_builder.set_publication_date(*published_date);
@@ -58,38 +61,22 @@ pub fn entry_to_epub(
             .add_author(&author.name);
     });
 
-    // TODO: Not sure I enjoy unpacking the title twice...
-    // I should probably rewrite this function to have
-    // some invariant checks and give me my title variable
-    // and all others that I require at the start.
-    //
-    // This just leads to my annoyment at Rusts Option
-    // unpacking since I have to some weird dances.
-    let file_path = match &entry.title {
-        Some(title) => entry_title_to_file_name(download_dir, &title.content.replace('/', "_")),
-        _ => {
-            return Err(Error::ContentExtractionError(
-                crate::storage::EntryConversionError::TitleExtractionError,
-            ))
-        }
+    if let Some(title) = &entry.title {
+        epub_file.file_path =
+            entry_title_to_file_name(download_dir, &title.content.replace('/', "_"));
+        epub_builder
+            .metadata("title", &title.content)?
+            .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))?;
+    } else {
+        return Err(Error::ContentExtractionError(
+            crate::storage::EntryConversionError::TitleExtractionError,
+        ));
     };
-
-    match &entry.title {
-        Some(title) => {
-            let _ = &epub_builder
-                .metadata("title", &title.content)?
-                .add_content(EpubContent::new(&title.content, xhtml.as_bytes()))?;
-        }
-        _ => {
-            return Err(Error::ContentExtractionError(
-                crate::storage::EntryConversionError::TitleExtractionError,
-            ))
-        }
-    }
 
     let mut data: Vec<u8> = Vec::new();
     epub_builder.generate(&mut data)?;
-    Ok(EpubFile { file_path, data })
+    epub_file.data = data;
+    Ok(epub_file)
 }
 
 pub fn entry_title_to_file_name(destination_dir: &str, title: &str) -> PathBuf {
