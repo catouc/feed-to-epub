@@ -2,7 +2,7 @@
   description = "A very basic flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
   };
 
   outputs = { self, nixpkgs }:
@@ -16,7 +16,6 @@
       packages.x86_64-linux.default = pkgs.rustPlatform.buildRustPackage {
         pname = "feed-to-epub";
         version = "0.7.0";
-        useFetchCargoVendor = true;
         cargoLock.lockFile = ./Cargo.lock;
 
         nativeBuildInputs = with pkgs; [
